@@ -3,6 +3,7 @@ return {
         "rmagatti/auto-session",
 
         -- 必须在启动阶段加载，才能自动恢复 session
+				--
         lazy = false,
 
         opts = {
