@@ -24,6 +24,35 @@ return {
         ---@module "obsidian"
         ---@type obsidian.config
         opts = {
+
+
+
+            ------------------------------------------------------------
+            -- change image form
+            ------------------------------------------------------------
+
+            attachments = {
+                img_folder = "attachments",
+
+                confirm_img_paste = false,
+
+                img_name_func = function()
+                    return os.date("%Y%m%d-%H%M%S")
+                end,
+
+                -- 不生成：
+                -- ![[image.png]]
+                --
+                -- 而生成标准 Markdown：
+                -- ![image.png](image.png)
+                img_text_func = function(path)
+                    local name = vim.fs.basename(tostring(path))
+                    local encoded_name = require("obsidian.util").urlencode(name)
+
+                    return string.format("![%s](%s)", name, encoded_name)
+                end,
+            },
+
             ------------------------------------------------------------
             -- Vault
             ------------------------------------------------------------
@@ -100,127 +129,62 @@ return {
                     ----------------------------------------------------
 
                     -- 搜索 / 跳转 Note
-                    map(
-                        "n",
-                        "<leader>nn",
-                        "<cmd>Obsidian quick_switch<cr>",
-                        "Obsidian: Notes"
-                    )
+                    map("n", "<leader>nn", "<cmd>Obsidian quick_switch<cr>", "Obsidian: Notes")
 
                     -- 全文搜索 Vault
-                    map(
-                        "n",
-                        "<leader>ns",
-                        "<cmd>Obsidian search<cr>",
-                        "Obsidian: Search"
-                    )
+                    map("n", "<leader>ns", "<cmd>Obsidian search<cr>", "Obsidian: Search")
 
                     -- 创建 Note
-                    map(
-                        "n",
-                        "<leader>nc",
-                        "<cmd>Obsidian new<cr>",
-                        "Obsidian: New Note"
-                    )
+                    map("n", "<leader>nc", "<cmd>Obsidian new<cr>", "Obsidian: New Note")
 
                     ----------------------------------------------------
                     -- 当前 Note
                     ----------------------------------------------------
 
                     -- Backlinks
-                    map(
-                        "n",
-                        "<leader>nb",
-                        "<cmd>Obsidian backlinks<cr>",
-                        "Obsidian: Backlinks"
-                    )
+                    map("n", "<leader>nb", "<cmd>Obsidian backlinks<cr>", "Obsidian: Backlinks")
 
                     -- 当前 Note 里的所有链接
-                    map(
-                        "n",
-                        "<leader>nl",
-                        "<cmd>Obsidian links<cr>",
-                        "Obsidian: Links"
-                    )
+                    map("n", "<leader>nl", "<cmd>Obsidian links<cr>", "Obsidian: Links")
 
                     -- 重命名 Note，并更新引用
-                    map(
-                        "n",
-                        "<leader>nr",
-                        "<cmd>Obsidian rename<cr>",
-                        "Obsidian: Rename Note"
-                    )
+                    map("n", "<leader>nr", "<cmd>Obsidian rename<cr>", "Obsidian: Rename Note")
 
                     ----------------------------------------------------
                     -- Tags
                     ----------------------------------------------------
 
-                    map(
-                        "n",
-                        "<leader>ng",
-                        "<cmd>Obsidian tags<cr>",
-                        "Obsidian: Tags"
-                    )
+                    map("n", "<leader>ng", "<cmd>Obsidian tags<cr>", "Obsidian: Tags")
 
                     ----------------------------------------------------
                     -- Daily Notes
                     ----------------------------------------------------
 
-                    map(
-                        "n",
-                        "<leader>nd",
-                        "<cmd>Obsidian today<cr>",
-                        "Obsidian: Today"
-                    )
+                    map("n", "<leader>nd", "<cmd>Obsidian today<cr>", "Obsidian: Today")
 
-                    map(
-                        "n",
-                        "<leader>nD",
-                        "<cmd>Obsidian dailies<cr>",
-                        "Obsidian: Daily Notes"
-                    )
+                    map("n", "<leader>nD", "<cmd>Obsidian dailies<cr>", "Obsidian: Daily Notes")
 
                     ----------------------------------------------------
                     -- Checkbox
                     ----------------------------------------------------
 
-                    map(
-                        "n",
-                        "<leader>nx",
-                        "<cmd>Obsidian toggle_checkbox<cr>",
-                        "Obsidian: Toggle Checkbox"
-                    )
+                    map("n", "<leader>nx", "<cmd>Obsidian toggle_checkbox<cr>", "Obsidian: Toggle Checkbox")
 
                     ----------------------------------------------------
                     -- Template
                     ----------------------------------------------------
 
-                    map(
-                        "n",
-                        "<leader>ni",
-                        "<cmd>Obsidian template<cr>",
-                        "Obsidian: Insert Template"
-                    )
+                    map("n", "<leader>ni", "<cmd>Obsidian template<cr>", "Obsidian: Insert Template")
 
                     ----------------------------------------------------
                     -- Visual mode
                     ----------------------------------------------------
 
                     -- 把选中文字链接到已有 Note
-                    map(
-                        "v",
-                        "<leader>nl",
-                        "<cmd>Obsidian link<cr>",
-                        "Obsidian: Link Selection"
-                    )
+                    map("v", "<leader>nl", "<cmd>Obsidian link<cr>", "Obsidian: Link Selection")
 
                     -- 从选中文字创建新 Note
-                    map(
-                        "v",
-                        "<leader>nc",
-                        "<cmd>Obsidian link_new<cr>",
-                        "Obsidian: New Note From Selection"
-                    )
+                    map("v", "<leader>nc", "<cmd>Obsidian link_new<cr>", "Obsidian: New Note From Selection")
                 end,
             },
         },
