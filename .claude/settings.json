@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "Bash(ls -la /c/Users/SDD/AppData/Local/nvim-data/lazy/ 2>/dev/null | grep -i ring0)",
+      "Read(//c/Users/SDD/AppData/Local/nvim-data/lazy//**)",
+      "Bash(ls -la /c/Users/SDD/AppData/Local/nvim-data/lazy/ring0-dark.nvim/)",
+      "Read(//c/Users/SDD/AppData/Local/nvim-data/lazy/ring0-dark.nvim//**)"
+    ]
+  }
+}
