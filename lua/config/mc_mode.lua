@@ -1,3 +1,6 @@
+--------------------------------------------------
+-- A custom mode used to select and add cursor 
+--------------------------------------------------
 local M = {}
 
 local mc = require("multicursor-nvim")
