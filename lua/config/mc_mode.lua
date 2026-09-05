@@ -1,11 +1,11 @@
 --------------------------------------------------
--- A custom mode used to select and add cursor 
+-- A custom mode used to select and add cursor
 --------------------------------------------------
 local M = {}
 
 local mc = require("multicursor-nvim")
-
 local ns = vim.api.nvim_create_namespace("mc-select-mode")
+local mc_core = require("multicursor-nvim.core")
 
 M.active = false
 
@@ -18,21 +18,20 @@ local function normal(keys)
     vim.cmd("normal! " .. keys)
 end
 
-	--------------------------------------------------
-	-- custom function 
-	--------------------------------------------------
+--------------------------------------------------
+-- custom function
+--------------------------------------------------
 
 local function match_add_frozen(direction)
-  -- 把当前位置留下为 frozen cursor
-  mc.toggleCursor()
+    -- 把当前位置留下为 frozen cursor
+    mc.toggleCursor()
 
-  -- 只移动 main cursor，不创建 enabled cursor
-  mc.matchSkipCursor(direction)
+    -- 只移动 main cursor，不创建 enabled cursor
+    mc.matchSkipCursor(direction)
 
-	--------------------------------------------------
-	-- MC 模式自己的键位
-	--------------------------------------------------
-
+    --------------------------------------------------
+    -- MC 模式自己的键位
+    --------------------------------------------------
 end
 
 local keys = {
@@ -96,18 +95,23 @@ local keys = {
     ["*"] = function()
         normal("*")
     end,
+    ["<C-U>"] = function()
+        vim.cmd([[execute "normal! \<C-u>"]])
+    end,
+
+    ["<C-D>"] = function()
+        vim.cmd([[execute "normal! \<C-d>"]])
+    end,
     ------------------------------------------------
     -- 多光标专属操作
     ------------------------------------------------
 
     J = function()
-				mc.matchSkipCursor(1)
-        -- normal("j")
+        mc.matchSkipCursor(1)
     end,
 
     K = function()
-				mc.matchSkipCursor(-1)
-        -- normal("k")
+        mc.matchSkipCursor(-1)
     end,
 
     s = function()
@@ -119,10 +123,10 @@ local keys = {
     end,
 
     a = function()
-			match_add_frozen(1)
+        match_add_frozen(1)
     end,
     A = function()
-			match_add_frozen(-1)
+        match_add_frozen(-1)
     end,
 }
 
@@ -147,7 +151,7 @@ function M.enter()
     end
 
     vim.api.nvim_echo({
-      { " MC SELECT ", "ModeMsg" },
+        { " MC SELECT ", "ModeMsg" },
     }, false, {})
 end
 
@@ -167,7 +171,7 @@ function M.leave()
     end
 
     vim.api.nvim_echo({
-      { "", "ModeMsg" },
+        { "", "ModeMsg" },
     }, false, {})
     vim.cmd("redraw")
 end
@@ -175,50 +179,66 @@ end
 -- 核心：自己的输入处理器
 --------------------------------------------------
 
+local scheduled_keys = {
+    J = true,
+    K = true,
+    a = true,
+    A = true,
+}
+
 vim.on_key(function(key, typed)
     if not M.active then
         return
     end
 
     ------------------------------------------------
-    -- mapping 产生出来的后续按键
-    -- 一律吞掉
+    -- multicursor 自己产生的内部输入
+    -- 必须放行
     ------------------------------------------------
+    if mc_core.performingAction then
+        return
+    end
 
+    ------------------------------------------------
+    -- 非用户直接输入的按键
+    ------------------------------------------------
     if typed == "" then
         return ""
     end
 
-    -- 转成 s / <Esc> / <C-x> 这样的表示
     local k = vim.fn.keytrans(typed)
 
     ------------------------------------------------
-    -- Esc = 离开 MC mode
+    -- Esc 交给外面的 mapping
     ------------------------------------------------
-
     if k == "<Esc>" then
         return
     end
 
     ------------------------------------------------
-    -- MC mode 自己定义的按键
+    -- MC SELECT 专用键
     ------------------------------------------------
-
     local action = keys[k]
 
     if action then
-        action()
+        if scheduled_keys[k] then
+            -- matchSkipCursor 等内部会操作输入队列
+            vim.schedule(function()
+                if M.active then
+                    action()
+                end
+            end)
+        else
+            -- 普通 native Normal 操作直接执行
+            action()
+        end
 
-        -- 不继续执行原来的 mapping
         return ""
     end
 
     ------------------------------------------------
-    -- 没有定义的键
-    -- 全部屏蔽
+    -- 其余键屏蔽
     ------------------------------------------------
-
     return ""
 end, ns)
-
 return M
