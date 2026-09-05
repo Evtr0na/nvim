@@ -15,9 +15,9 @@ local function normal(keys)
     vim.cmd("normal! " .. keys)
 end
 
---------------------------------------------------
--- MC 模式自己的键位
---------------------------------------------------
+	--------------------------------------------------
+	-- custom function 
+	--------------------------------------------------
 
 local function match_add_frozen(direction)
   -- 把当前位置留下为 frozen cursor
@@ -25,6 +25,10 @@ local function match_add_frozen(direction)
 
   -- 只移动 main cursor，不创建 enabled cursor
   mc.matchSkipCursor(direction)
+
+	--------------------------------------------------
+	-- MC 模式自己的键位
+	--------------------------------------------------
 
 end
 
@@ -94,13 +98,13 @@ local keys = {
     ------------------------------------------------
 
     J = function()
-        mc.toggleCursor()
-        normal("j")
+				mc.matchSkipCursor(1)
+        -- normal("j")
     end,
 
     K = function()
-        mc.toggleCursor()
-        normal("k")
+				mc.matchSkipCursor(-1)
+        -- normal("k")
     end,
 
     s = function()
