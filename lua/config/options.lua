@@ -4,7 +4,6 @@
 -- lua/config/options.lua
 
 
-
 --------------------------------
 -- auto-session
 --------------------------------
@@ -13,6 +12,23 @@ vim.o.sessionoptions = "blank,buffers,curdir,folds,help,tabpages,winsize,winpos,
 --------------------------------
 --vim
 --------------------------------
+
+
+-- CURSOR
+
+-- vim.opt.guicursor = {
+--   "n:block-blinkwait300-blinkon200-blinkoff100",
+--   "i:ver25-blinkon0",
+-- }
+
+-- 每个窗口顶部显示文件名
+vim.opt.winbar = " %t %m"
+-- 隐藏底部 statusline 内容
+vim.opt.laststatus = 0
+vim.opt.statusline = " "
+-- closed state bar
+vim.opt.showmode = false
+
 -- 始终保持 Sign Column 展开（推荐设为 yes，或者指定固定宽度 "yes:1" / "yes:2"）
 vim.o.signcolumn = "yes"
 -- 关闭右下角的横竖号数

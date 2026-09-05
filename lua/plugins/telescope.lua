@@ -87,7 +87,7 @@ return {
         -- 加载 zoxide 扩展
         require("telescope").load_extension("zoxide")
 
-        -- ⚠️ 快捷键已移除（按你的要求，不配置）
+        --  快捷键已移除（按你的要求，不配置）
         -- 如果你以后想添加，可以在这里自行添加 vim.keymap.set(...)
     end,
 }
