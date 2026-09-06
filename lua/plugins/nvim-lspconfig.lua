@@ -104,16 +104,6 @@ return {
             ------------------------------------------------------------
             -- Mason LSP
             ------------------------------------------------------------
-            require("mason-lspconfig").setup({
-                -- Mason 安装的 LSP 默认自动 enable
-                --
-                -- 但排除 ast_grep
-                automatic_enable = {
-                    exclude = {
-                        "ast_grep",
-                    },
-                },
-            })
         end,
     },
 }

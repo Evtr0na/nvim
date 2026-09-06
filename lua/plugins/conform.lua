@@ -22,10 +22,10 @@ return {
 
     -- 不使用 BufWritePre
     -- 所以保存时不会格式化
-    event = {
-        "BufReadPost",
-        "BufNewFile",
-    },
+    -- event = {
+    --     "BufReadPost",
+    --     "BufNewFile",
+    -- },
     cmd = { "ConformInfo", "Formatting" },
     -- Formatting 命令提前注册
     opts = {
