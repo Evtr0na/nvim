@@ -23,6 +23,27 @@ vim.o.sessionoptions = "blank,buffers,curdir,folds,help,tabpages,winsize,winpos,
 --   "i:ver25-blinkon0",
 -- }
 
+
+--------------------------------
+-- Lazy.nvim Add_On_MangerBlackGround_Color
+--------------------------------
+vim.api.nvim_create_autocmd("ColorScheme", {
+    pattern = "*",
+    callback = function()
+        vim.api.nvim_set_hl(0, "LazyNormal", {
+            bg = "#181818",
+        })
+
+        vim.api.nvim_set_hl(0, "LazyBorder", {
+            bg = "#181818",
+        })
+
+        vim.api.nvim_set_hl(0, "LazyBackdrop", {
+            bg = "#181818",
+        })
+    end,
+})
+
 -- 每个窗口顶部显示文件名
 vim.opt.winbar = " %t %m"
 -- 隐藏底部 statusline 内容
@@ -71,15 +92,3 @@ vim.o.shiftwidth = 2
 -- 4. 设置 1 个 \t 制表符在屏幕上渲染时只占用 2 个字符宽度
 vim.o.tabstop = 2
 
---------------------------------
--- Lazy.nvim Add_On_MangerBlackGround_Color
---------------------------------
-vim.api.nvim_create_autocmd("ColorScheme", {
-    pattern = "*",
-    callback = function()
-        -- 自定义 Lazy 界面背景底色
-        vim.api.nvim_set_hl(0, "LazyNormal", { bg = "#181818" })
-        -- vim.api.nvim_set_hl(0, "LazyBorder", { bg = "#181818", fg = "#b4befe" })
-        vim.api.nvim_set_hl(0, "LazyBorder", { bg = "#181818" })
-    end,
-})

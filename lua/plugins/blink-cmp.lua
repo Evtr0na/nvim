@@ -1,8 +1,10 @@
 return {
     {
         "saghen/blink.cmp",
-				event = "InsertEnter",
-        -- 固定使用稳定的 v1
+        event = {
+            "InsertEnter",
+            "CmdlineEnter",
+        }, -- 固定使用稳定的 v1
         version = "1.*",
 
         dependencies = {
@@ -35,7 +37,7 @@ return {
                 --   保持普通 Tab 行为
                 ["<Tab>"] = {
                     "select_next",
-                    "snippet_forward",
+                   "snippet_forward",
                     "fallback",
                 },
 
@@ -43,6 +45,16 @@ return {
                     "select_prev",
                     "snippet_backward",
                     "fallback",
+                },
+            },
+            cmdline = {
+                keymap = {
+                    preset = "cmdline",
+                },
+
+                completion = {
+                    menu = {
+                        auto_show =  false                 },
                 },
             },
 
@@ -91,6 +103,7 @@ return {
 
                 menu = {
                     border = "rounded",
+										-- auto_show = false,
                 },
 
                 --------------------------------------------------------
