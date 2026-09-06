@@ -16,7 +16,7 @@ return {
     {
         "Mathijs-Bakker/godotdev.nvim",
         -- enabled = false,
-        ft = { "gd", "gdshader", "gdscript" },
+        ft = { "gd", "gdscript" },
         dependencies = {
             "mfussenegger/nvim-dap",
             "rcarriga/nvim-dap-ui",

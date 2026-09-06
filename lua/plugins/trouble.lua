@@ -1,6 +1,5 @@
 return {
     "folke/trouble.nvim",
-    event = "BufReadPre",
     opts = {
         win = {
             wo = {

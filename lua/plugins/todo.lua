@@ -2,7 +2,10 @@
 return {
     -- {
     "folke/todo-comments.nvim",
-    event = "BufReadPre",
+event = {
+    "BufReadPost",
+    "BufNewFile",
+},
     opts = {},
     -- },
     -- {

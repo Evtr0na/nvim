@@ -6,5 +6,6 @@ return {
 
     config = function()
         vim.cmd.colorscheme("ring0dark")
+
     end,
 }

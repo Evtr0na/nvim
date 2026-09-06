@@ -6,11 +6,7 @@ return {
             "kevinhwang91/promise-async",
         },
 
-        event = {
-            "BufReadPost",
-            "BufNewFile",
-        },
-
+event = "VeryLazy",
         keys = {
             {
                 "zR",

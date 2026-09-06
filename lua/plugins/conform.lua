@@ -1,12 +1,23 @@
 --a formatting tool
 
 return {
-
     "stevearc/conform.nvim",
 
     -- 让 gdshader-nvim-support 先加载，以便它自动注册
     -- `gdshader` formatter（见其 format.lua）。
-
+    keys = {
+        {
+            "<leader>f",
+            mode = "v",
+            function()
+                require("conform").format({
+                    async = true,
+                    lsp_format = "fallback",
+                })
+            end,
+            desc = "Format selection",
+        },
+    },
     dependencies = {},
 
     -- 不使用 BufWritePre
@@ -15,7 +26,7 @@ return {
         "BufReadPost",
         "BufNewFile",
     },
-    cmd = { "ConformInfo" },
+    cmd = { "ConformInfo", "Formatting" },
     -- Formatting 命令提前注册
     opts = {
 
@@ -42,9 +53,9 @@ return {
         },
     },
 
----------------------------------------------------------------------------
--- Formatting when visual
----------------------------------------------------------------------------
+    ---------------------------------------------------------------------------
+    -- Formatting when visual
+    ---------------------------------------------------------------------------
     config = function(_, opts)
         local conform = require("conform")
 
@@ -57,10 +68,10 @@ return {
             if args.count ~= -1 then
                 local end_line = vim.api.nvim_buf_get_lines(0, args.line2 - 1, args.line2, true)[1]
 
-            range = {
-                start = { args.line1, 0 },
-                ["end"] = { args.line2, end_line:len() },
-            }
+                range = {
+                    start = { args.line1, 0 },
+                    ["end"] = { args.line2, end_line:len() },
+                }
             end
 
             conform.format({
@@ -75,13 +86,13 @@ return {
         -- 社区/官方推荐的 Visual 方式
         -- 同时留着用于验证
 
-        vim.keymap.set("v", "<leader>f", function()
-            conform.format({
-                async = true,
-                lsp_format = "fallback",
-            })
-        end, {
-            desc = "Format selection",
-        })
+        -- vim.keymap.set("v", "<leader>f", function()
+        --     conform.format({
+        --         async = true,
+        --         lsp_format = "fallback",
+        --     })
+        -- end, {
+        --     desc = "Format selection",
+        -- })
     end,
 }
