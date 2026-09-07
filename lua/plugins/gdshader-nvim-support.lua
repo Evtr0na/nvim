@@ -5,6 +5,11 @@ return {
     ft = { "gdshader", "gdshaderinc" },
     config = function()
         require("gdshader_nvim").setup({
+						features = {
+							diagnostics = false,
+
+
+						},
             color = {
                 decorate = true,
                 editor = "ccc",

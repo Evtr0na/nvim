@@ -37,7 +37,7 @@ return {
                 --   保持普通 Tab 行为
                 ["<Tab>"] = {
                     "select_next",
-                   "snippet_forward",
+                    "snippet_forward",
                     "fallback",
                 },
 
@@ -54,7 +54,8 @@ return {
 
                 completion = {
                     menu = {
-                        auto_show =  false                 },
+                        auto_show = false,
+                    },
                 },
             },
 
@@ -103,7 +104,7 @@ return {
 
                 menu = {
                     border = "rounded",
-										-- auto_show = false,
+                    -- auto_show = false,
                 },
 
                 --------------------------------------------------------
@@ -163,18 +164,25 @@ return {
 
                 providers = {
 
-                    avante = {
-                        module = "blink-cmp-avante",
-                        name = "Avante",
-                    },
+                    -- avante = {
+                    --     module = "blink-cmp-avante",
+                    --     name = "Avante",
+                    -- },
 
                     gdshader = {
                         name = "GDShader",
-
                         module = "gdshader_nvim",
 
-                        -- 让自己的 GDShader 数据排序更靠前
-                        score_offset = 100,
+                        enabled = function()
+                            local line = vim.api.nvim_get_current_line()
+
+                            -- 整行为空，或者只有空格/tab
+                            if line:match("^%s*$") then
+                                return false
+                            end
+
+                            return true
+                        end,
                     },
                 },
             },
