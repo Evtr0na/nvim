@@ -17,7 +17,7 @@ return {
         {
             "<leader>z",
             function()
-    require("telescope").extensions.zoxide.list()
+                require("telescope").extensions.zoxide.list()
             end,
             desc = "Zoxide jump",
         },
@@ -29,11 +29,11 @@ return {
         {
             "nvim-telescope/telescope-fzf-native.nvim",
             build = function()
-    if vim.fn.has("win32") == 1 then
-        return "mingw32-make"
-    else
-        return "make"
-    end
+                if vim.fn.has("win32") == 1 then
+                    return "mingw32-make"
+                else
+                    return "make"
+                end
             end,
         },
 
@@ -41,69 +41,70 @@ return {
         "jvgrootveld/telescope-zoxide",
     },
 
-opts = function()
-    local find_command
+    opts = function()
+        local find_command
 
-    if vim.fn.executable("fd") == 1 then
-        find_command = {
-            "fd",
-            "--type",
-            "f",
-            "--hidden",
-            "--follow",
-        }
-    end
-
-    return {
-        defaults = {
-            file_ignore_patterns = {
-                "vimdow",
-                "%.uid$",
-            },
-
-            path_display = { "smart" },
-
-            vimgrep_arguments = {
-                "rg",
-                "--follow",
+        if vim.fn.executable("fd") == 1 then
+            find_command = {
+                "fd",
+                "--type",
+                "f",
                 "--hidden",
-                "--no-heading",
-                "--with-filename",
-                "--line-number",
-                "--column",
-                "--smart-case",
-            },
-        },
+                "--follow",
+            }
+        end
 
-        pickers = {
-            find_files = {
-                find_command = find_command,
-            },
-        },
+        return {
+            defaults = {
+                file_ignore_patterns = {
+                    "vimdow",
+                    "%.uid$",
+                    ".git",
+                },
 
-        extensions = {
-            fzf = {
-                fuzzy = true,
-                override_generic_sorter = true,
-                override_file_sorter = true,
-                case_mode = "smart_case",
+                path_display = { "smart" },
+
+                vimgrep_arguments = {
+                    "rg",
+                    "--follow",
+                    "--hidden",
+                    "--no-heading",
+                    "--with-filename",
+                    "--line-number",
+                    "--column",
+                    "--smart-case",
+                },
             },
 
-            zoxide = {
-                prompt_title = "[ Zoxide ]",
-                score = true,
+            pickers = {
+                find_files = {
+                    find_command = find_command,
+                },
             },
-        },
-    }
-end,
+
+            extensions = {
+                fzf = {
+                    fuzzy = true,
+                    override_generic_sorter = true,
+                    override_file_sorter = true,
+                    case_mode = "smart_case",
+                },
+
+                zoxide = {
+                    prompt_title = "[ Zoxide ]",
+                    score = true,
+                },
+            },
+        }
+    end,
     config = function(_, opts)
-    require("telescope").setup(opts)
+        require("telescope").setup(opts)
 
-    -- 直接加载 fzf 扩展（无需检查 fzf 命令，因为扩展本身不依赖它）
-    require("telescope").load_extension("fzf")
+        -- 直接加载 fzf 扩展（无需检查 fzf 命令，因为扩展本身不依赖它）
+        require("telescope").load_extension("fzf")
 
-    -- 加载 zoxide 扩展
-    require("telescope").load_extension("zoxide")
+        -- 加载 zoxide 扩展
+        require("telescope").load_extension("zoxide")
 
         --  快捷键已移除（按你的要求，不配置）
         -- 如果你以后想添加，可以在这里自行添加 vim.keymap.set(...)

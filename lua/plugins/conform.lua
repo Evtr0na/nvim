@@ -26,7 +26,7 @@ return {
     --     "BufReadPost",
     --     "BufNewFile",
     -- },
-    cmd = { "ConformInfo", "Formatting" },
+    cmd = { "ConformInfo", "Fm" },
     -- Formatting 命令提前注册
     opts = {
 
@@ -62,7 +62,7 @@ return {
         conform.setup(opts)
 
         -- 官方 conform.nvim recipe 的方式
-        vim.api.nvim_create_user_command("Formatting", function(args)
+        vim.api.nvim_create_user_command("Fm", function(args)
             local range = nil
 
             if args.count ~= -1 then
