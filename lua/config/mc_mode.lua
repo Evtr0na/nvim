@@ -22,6 +22,20 @@ end
 -- custom function
 --------------------------------------------------
 
+local function line_add_frozen(direction)
+    -- 到文件边界时什么都不做，避免留下重叠的 frozen cursor
+    local target = vim.fn.line(".") + direction
+    if target < 1 or target > vim.fn.line("$") then
+        return
+    end
+
+    -- 当前位置留下 frozen cursor
+    mc.toggleCursor()
+
+    -- main cursor 移动一行，不再额外创建 enabled cursor
+    mc.lineSkipCursor(direction, { skipEmpty = false })
+end
+
 local function match_add_frozen(direction)
     -- 把当前位置留下为 frozen cursor
     mc.toggleCursor()
@@ -106,6 +120,14 @@ local keys = {
     -- 多光标专属操作
     ------------------------------------------------
 
+    u = function()
+        line_add_frozen(1)
+    end,
+
+    i = function()
+        line_add_frozen(-1)
+    end,
+
     J = function()
         mc.matchSkipCursor(1)
     end,
@@ -184,6 +206,8 @@ local scheduled_keys = {
     K = true,
     a = true,
     A = true,
+    i = true,
+    u = true,
 }
 
 vim.on_key(function(key, typed)
