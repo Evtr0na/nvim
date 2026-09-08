@@ -28,6 +28,11 @@ return {
         },
 
         opts = {
+				
+					ensure_installed  = {
+						"glsl_analyzer"
+					},
+
             automatic_enable = {
                 exclude = {
                     "ast_grep",

@@ -12,6 +12,7 @@ require("config.filetypes") -- gdshader
 ------------------------------------------------------------
 -- Diagnostic
 ------------------------------------------------------------
+require("config.glslang") -- need install glslang in pc
 require("config.diagnostics") --custom warning look like
 
 ------------------------------------------------------------

@@ -61,11 +61,24 @@ return {
             --         ".git",
             --     },
             --
-                -- Blink 的 LSP completion capabilities
-                -- capabilities = require("blink.cmp").get_lsp_capabilities(),
+            -- Blink 的 LSP completion capabilities
+            -- capabilities = require("blink.cmp").get_lsp_capabilities(),
             -- })
 
             -- vim.lsp.enable("gdshader_lsp")
+
+            ------------------------------------------------------------
+            -- GLSL
+            ------------------------------------------------------------
+            vim.lsp.config("glsl_analyzer", {
+
+                filetypes = { "glsl" },
+
+                root_markers = {
+                    "project.godot",
+                    ".git",
+                },
+            })
 
             ------------------------------------------------------------
             -- lua_ls

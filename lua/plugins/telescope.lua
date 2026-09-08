@@ -59,6 +59,7 @@ return {
                 file_ignore_patterns = {
                     "vimdow",
                     "%.uid$",
+                    "%.import$",
                     ".git",
                 },
 
