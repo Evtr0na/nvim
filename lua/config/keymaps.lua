@@ -5,7 +5,6 @@
 
 local map = vim.keymap.set
 
-
 -- =========================================================
 --"smjonas/inc-rename.nvim",
 -- =========================================================
@@ -18,13 +17,10 @@ map("n", "<leader>rn", function()
         return
     end
 
-    vim.cmd(
-        "IncRename " .. vim.fn.expand("<cword>")
-    )
+    vim.cmd("IncRename " .. vim.fn.expand("<cword>"))
 end, {
     desc = "Incremental Rename",
 })
-
 
 -- Ctrl+上下：调整窗口高度
 map("n", "<C-Down>", "<cmd>resize +2<cr>", { desc = "增大窗口高度", noremap = true, silent = true })
@@ -146,19 +142,136 @@ map("n", "<leader>r", vim.lsp.buf.rename, {
     desc = "Rename Symbol",
 })
 
--- Space + =
--- 格式化
-map("n", "<leader>=", function()
-    vim.lsp.buf.format({ async = true })
-end, { desc = "Format Document" })
 
 -- =========================================================
--- Visual 模式
+-- Visual Line：y / Y / p / P 保持原来的列
 -- =========================================================
 
--- p：粘贴后不覆盖寄存器
-map("x", "p", '"_dP', {
-    desc = "Paste Without Overwriting Register",
+-- 把光标移动到指定行，同时尽量保持原来的“屏幕列”
+local function set_vcol(row, vcol)
+    if row < 1 then
+        return
+    end
+
+    -- 把屏幕列转换成目标行上的 byte column
+    local col = vim.fn.virtcol2col(0, row, vcol)
+
+    -- 空行时 virtcol2col() 可能返回 0
+    if col < 1 then
+        col = 1
+    end
+
+    -- cursor({ lnum, col, off, curswant })
+    -- 最后的 vcol 同时保存上下移动时想保持的列
+    vim.fn.cursor({
+        row,
+        col,
+        0,
+        vcol,
+    })
+end
+
+-- ---------------------------------------------------------
+-- Visual yank
+-- V -> y
+-- V -> Y
+-- 都保持原来的列
+-- ---------------------------------------------------------
+local function visual_yank_keep_col()
+    local vcol = vim.fn.virtcol(".")
+    local reg = vim.v.register
+
+    -- normal! 绕过映射，避免递归
+    vim.cmd.normal({
+        args = {
+            '"' .. reg .. "y",
+        },
+        bang = true,
+    })
+
+    -- yank 完以后，让 Neovim 自己决定停在哪一行，
+    -- 我们只恢复列
+    local row = vim.fn.line(".")
+
+    set_vcol(row, vcol)
+end
+
+map("x", "y", visual_yank_keep_col, {
+    desc = "Yank and Keep Column",
+})
+
+map("x", "Y", visual_yank_keep_col, {
+    desc = "Yank and Keep Column",
+})
+
+-- =========================================================
+-- Normal mode p / P
+-- linewise paste 后保持原来的列
+-- =========================================================
+
+local function normal_paste_keep_col(key)
+    -- 保存粘贴前的屏幕列
+    local vcol = vim.fn.virtcol(".")
+
+    -- 当前指定的寄存器
+    --
+    -- 普通 p   -> "
+    -- "0p      -> 0
+    -- "ap      -> a
+    -- "+p      -> +
+    local reg = vim.v.register
+
+    -- 支持 2p / 3p 等 count
+    local count = vim.v.count
+    local count_prefix = count > 0 and tostring(count) or ""
+
+    -- 如果用户没有显式指定寄存器，
+    -- 不要人为补上 ""，让 Neovim 自己处理
+    -- clipboard=unnamedplus 等默认行为
+    local reg_prefix = ""
+
+    if reg ~= '"' then
+        reg_prefix = '"' .. reg
+    end
+
+    -- 真正执行原生 p / P
+    vim.cmd.normal({
+        args = {
+            reg_prefix .. count_prefix .. key,
+        },
+        bang = true,
+    })
+
+    -- 对 linewise paste 来说，
+    -- 此时 Neovim 已经把光标放在新粘贴出来的行
+    local row = vim.fn.line(".")
+
+    -- 把原来的屏幕列转换成当前行的实际 byte column
+    local col = vim.fn.virtcol2col(0, row, vcol)
+
+    if col < 1 then
+        col = 1
+    end
+
+    -- 恢复原来的列
+    vim.fn.cursor({
+        row,
+        col,
+        0,
+        vcol,
+    })
+end
+
+map("n", "p", function()
+    normal_paste_keep_col("p")
+end, {
+    desc = "Paste Below and Keep Column",
+})
+
+map("n", "P", function()
+    normal_paste_keep_col("P")
+end, {
+    desc = "Paste Above and Keep Column",
 })
 
 -- >
