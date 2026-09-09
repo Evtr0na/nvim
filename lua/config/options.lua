@@ -84,11 +84,11 @@ end
 -- 1. 讲 Tab 键自动转换为空格 (Spaces)
 -- vim.o.expandtab = true
 -- 2. 设置按一次 Tab 键插入的空格数量为 2
-vim.o.softtabstop = 2
+vim.o.softtabstop = 4
 
 -- 3. 设置自动缩进 (<< / >> 或换行) 时的空格数量为 2
-vim.o.shiftwidth = 2
+vim.o.shiftwidth = 4
 
 -- 4. 设置 1 个 \t 制表符在屏幕上渲染时只占用 2 个字符宽度
-vim.o.tabstop = 2
+vim.o.tabstop = 4
 
