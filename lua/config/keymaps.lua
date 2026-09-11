@@ -1,6 +1,6 @@
 -- Keymaps are automatically loaded on the VeryLazy event
 -- Default keymaps that are always set: https://github.com/LazyVim/LazyVim/blob/main/lua/lazyvim/config/keymaps.lua
--- Add any additional keymaps here
+-- Add any additional keymaps here  e
 -- ~/.config/nvim/lua/config/keymaps.lua
 
 local map = vim.keymap.set
@@ -147,6 +147,10 @@ map("n", "<leader>r", vim.lsp.buf.rename, {
 -- Visual Line：y / Y / p / P 保持原来的列
 -- =========================================================
 
+
+
+
+
 -- 把光标移动到指定行，同时尽量保持原来的“屏幕列”
 local function set_vcol(row, vcol)
     if row < 1 then
@@ -175,39 +179,39 @@ end
 -- Visual yank
 -- V -> y
 -- V -> Y
--- 都保持原来的列
+-- 都保持的位置
 -- ---------------------------------------------------------
-local function visual_yank_keep_col()
-    local vcol = vim.fn.virtcol(".")
-    local reg = vim.v.register
 
-    -- normal! 绕过映射，避免递归
-    vim.cmd.normal({
-        args = {
-            '"' .. reg .. "y",
-        },
-        bang = true,
-    })
-
-    -- yank 完以后，让 Neovim 自己决定停在哪一行，
-    -- 我们只恢复列
-    local row = vim.fn.line(".")
-
-    set_vcol(row, vcol)
-end
-
-map("x", "y", visual_yank_keep_col, {
-    desc = "Yank and Keep Column",
+map("x", "y", function()
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  vim.cmd("normal! y")
+  vim.api.nvim_win_set_cursor(0, cursor)
+end, {
+  desc = "Yank and Keep Cursor",
+  silent = true,
 })
 
-map("x", "Y", visual_yank_keep_col, {
-    desc = "Yank and Keep Column",
-})
+
 
 -- =========================================================
 -- Normal mode p / P
 -- linewise paste 后保持原来的列
 -- =========================================================
+
+-- Ctrl+A -> y：复制全文，但保持光标和窗口位置不动
+map("n", "<C-a>y", function()
+  local view = vim.fn.winsaveview()
+
+  -- 复制整个 buffer
+  vim.cmd("%yank")
+
+  -- 恢复光标、滚动位置、列位置
+  vim.fn.winrestview(view)
+end, {
+  desc = "Yank All and Keep Cursor",
+  silent = true,
+})
+
 
 local function normal_paste_keep_col(key)
     -- 保存粘贴前的屏幕列
@@ -261,6 +265,9 @@ local function normal_paste_keep_col(key)
         vcol,
     })
 end
+
+
+
 
 map("n", "p", function()
     normal_paste_keep_col("p")
