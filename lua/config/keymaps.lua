@@ -183,12 +183,31 @@ end
 -- ---------------------------------------------------------
 
 map("x", "y", function()
-  local cursor = vim.api.nvim_win_get_cursor(0)
-  vim.cmd("normal! y")
-  vim.api.nvim_win_set_cursor(0, cursor)
+    local cursor = vim.api.nvim_win_get_cursor(0)
+
+    -- 获取用户指定的寄存器
+    local reg = vim.v.register
+
+    -- 普通 y 时不要强行指定寄存器，
+    -- 保留 clipboard=unnamedplus 的默认行为
+    local reg_prefix = ""
+    if reg ~= '"' then
+        reg_prefix = '"' .. reg
+    end
+
+    -- 真正执行原生 yank
+    vim.cmd.normal({
+        args = {
+            reg_prefix .. "y",
+        },
+        bang = true,
+    })
+
+    -- 恢复 yank 前的光标位置
+    vim.api.nvim_win_set_cursor(0, cursor)
 end, {
-  desc = "Yank and Keep Cursor",
-  silent = true,
+    desc = "Yank and Keep Cursor",
+    silent = true,
 })
 
 
