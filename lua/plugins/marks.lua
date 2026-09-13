@@ -5,7 +5,6 @@ return {
     opts = {
         default_mappings = false,
 
-
         cyclic = true,
         force_write_shada = false,
         refresh_interval = 250,
@@ -51,8 +50,19 @@ return {
         vim.opt.signcolumn = "yes"
         require("marks").setup(opts)
 
+        local line_nr = vim.api.nvim_get_hl(0, {
+            name = "LineNr",
+            link = false,
+        })
+
+        vim.api.nvim_set_hl(0, "MarkSignHL", {
+            fg = line_nr.fg,
+        })
+	
+        -- 默认不显示左侧 mark signs
+        vim.cmd("MarksToggleSigns")
+
         -- mark 所在行不要特殊高亮/加粗行号
-        vim.api.nvim_set_hl(0, "MarkSignNumHL", {
-		})	
+        vim.api.nvim_set_hl(0, "MarkSignNumHL", {})
     end,
 }
