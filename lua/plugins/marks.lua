@@ -53,7 +53,6 @@ return {
 
         -- mark 所在行不要特殊高亮/加粗行号
         vim.api.nvim_set_hl(0, "MarkSignNumHL", {
-            link = "LineNr",
 		})	
     end,
 }
