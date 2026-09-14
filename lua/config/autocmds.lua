@@ -39,11 +39,28 @@ local disabled_builtins = {
 for _, plugin in ipairs(disabled_builtins) do
     vim.g["loaded_" .. plugin] = 1
 end
+
 ---------------------------------------------------------------------------
 -- 修复nvim的cmd乱码
 ---------------------------------------------------------------------------
+
 vim.api.nvim_create_autocmd("TermOpen", {
-    callback = function()
-        vim.fn.chansend(vim.b.terminal_job_id, "chcp 65001 >nul\r")
+    callback = function(args)
+        -- 不要给 yazi / lazygit 等 TUI 乱发 shell 命令
+        if vim.bo[args.buf].filetype == "yazi" then
+            return
+        end
+
+        local name = vim.api.nvim_buf_get_name(args.buf):lower()
+
+        -- 只处理真正的 cmd.exe
+        if not name:find("cmd%.exe") then
+            return
+        end
+
+        local job_id = vim.b[args.buf].terminal_job_id
+        if job_id then
+            vim.fn.chansend(job_id, "chcp 65001 >nul\r")
+        end
     end,
 })

@@ -94,3 +94,14 @@ vim.o.shiftwidth = 4
 -- 4. 设置 1 个 \t 制表符在屏幕上渲染时只占用 2 个字符宽度
 vim.o.tabstop = 4
 
+
+--------------------------------
+-- 关闭换行自动注释
+--------------------------------
+
+vim.api.nvim_create_autocmd("FileType", {
+    pattern = "*",
+    callback = function()
+        vim.opt_local.formatoptions:remove({ "c", "r", "o" })
+    end,
+})
