@@ -58,7 +58,7 @@ return {
         vim.api.nvim_set_hl(0, "MarkSignHL", {
             fg = line_nr.fg,
         })
-	
+
         -- 默认不显示左侧 mark signs
         vim.cmd("MarksToggleSigns")
 

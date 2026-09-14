@@ -81,13 +81,7 @@ local function make_progressive_labeler()
     local function clear_hints()
         for buf in pairs(touched_bufs) do
             if vim.api.nvim_buf_is_valid(buf) then
-                pcall(
-                    vim.api.nvim_buf_clear_namespace,
-                    buf,
-                    flash_hint_ns,
-                    0,
-                    -1
-                )
+                pcall(vim.api.nvim_buf_clear_namespace, buf, flash_hint_ns, 0, -1)
             end
         end
 
@@ -125,21 +119,12 @@ local function make_progressive_labeler()
         -- +1 character 得到下一次应该输入的字符
         --------------------------------------------------------
 
-        local next_pos = Util.offset_pos(
-            buf,
-            match.end_pos,
-            { 0, 1 }
-        )
+        local next_pos = Util.offset_pos(buf, match.end_pos, { 0, 1 })
 
         local row = next_pos[1]
         local col = next_pos[2]
 
-        local line = vim.api.nvim_buf_get_lines(
-            buf,
-            row - 1,
-            row,
-            false
-        )[1]
+        local line = vim.api.nvim_buf_get_lines(buf, row - 1, row, false)[1]
 
         if not line or col >= #line then
             return
@@ -155,11 +140,7 @@ local function make_progressive_labeler()
             return
         end
 
-        local char = vim.fn.strcharpart(
-            line,
-            char_index,
-            1
-        )
+        local char = vim.fn.strcharpart(line, char_index, 1)
 
         if char == "" then
             return
@@ -167,24 +148,18 @@ local function make_progressive_labeler()
 
         touched_bufs[buf] = true
 
-        vim.api.nvim_buf_set_extmark(
-            buf,
-            flash_hint_ns,
-            row - 1,
-            col,
-            {
-                end_col = col + #char,
+        vim.api.nvim_buf_set_extmark(buf, flash_hint_ns, row - 1, col, {
+            end_col = col + #char,
 
-                hl_group = "FlashNextChar",
+            hl_group = "FlashNextChar",
 
-                -- FlashBackdrop 是基础 priority
-                -- match / label 会继续增加
-                -- 黄色提示需要压过 backdrop
-                priority = state.opts.highlight.priority + 3,
+            -- FlashBackdrop 是基础 priority
+            -- match / label 会继续增加
+            -- 黄色提示需要压过 backdrop
+            priority = state.opts.highlight.priority + 3,
 
-                strict = false,
-            }
-        )
+            strict = false,
+        })
     end
 
     local function labeler(matches, state)
@@ -199,10 +174,7 @@ local function make_progressive_labeler()
         --------------------------------------------------------
 
         if not builtin_labeler then
-            builtin_labeler =
-                require("flash.labeler")
-                .new(state)
-                :labeler()
+            builtin_labeler = require("flash.labeler").new(state):labeler()
         end
 
         builtin_labeler()
@@ -245,10 +217,7 @@ function M.jump()
         if vim.api.nvim_win_is_valid(win) then
             local buf = vim.api.nvim_win_get_buf(win)
 
-            if
-                not seen_bufs[buf]
-                and vim.api.nvim_buf_is_loaded(buf)
-            then
+            if not seen_bufs[buf] and vim.api.nvim_buf_is_loaded(buf) then
                 seen_bufs[buf] = true
                 get_virtual_text_hls(buf, groups)
             end
@@ -260,13 +229,24 @@ function M.jump()
     --------------------------------------------------------
 
     for group in pairs(groups) do
-        vim.api.nvim_set_hl(
-            flash_dim_ns,
-            group,
-            {
-                fg = "#393939",
-            }
-        )
+        vim.api.nvim_set_hl(flash_dim_ns, group, {
+            fg = "#393939",
+        })
+    end
+
+    --------------------------------------------------------
+    -- 行号也全部变灰
+    --------------------------------------------------------
+
+    for _, group in ipairs({
+        "LineNr",
+        "LineNrAbove",
+        "LineNrBelow",
+        "CursorLineNr",
+    }) do
+        vim.api.nvim_set_hl(flash_dim_ns, group, {
+            fg = "#393939",
+        })
     end
 
     --------------------------------------------------------
@@ -283,15 +263,11 @@ function M.jump()
 
     for _, win in ipairs(wins) do
         if vim.api.nvim_win_is_valid(win) then
-            old_ns[win] =
-                vim.api.nvim_get_hl_ns({
-                    winid = win,
-                })
+            old_ns[win] = vim.api.nvim_get_hl_ns({
+                winid = win,
+            })
 
-            vim.api.nvim_win_set_hl_ns(
-                win,
-                flash_dim_ns
-            )
+            vim.api.nvim_win_set_hl_ns(win, flash_dim_ns)
         end
     end
 
@@ -299,8 +275,7 @@ function M.jump()
     -- 5. progressive labeler
     --------------------------------------------------------
 
-    local progressive_labeler, clear_hints =
-        make_progressive_labeler()
+    local progressive_labeler, clear_hints = make_progressive_labeler()
 
     --------------------------------------------------------
     -- 6. 执行 Flash
@@ -324,10 +299,7 @@ function M.jump()
 
     for win, ns in pairs(old_ns) do
         if vim.api.nvim_win_is_valid(win) then
-            vim.api.nvim_win_set_hl_ns(
-                win,
-                ns
-            )
+            vim.api.nvim_win_set_hl_ns(win, ns)
         end
     end
 

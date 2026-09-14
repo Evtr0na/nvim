@@ -63,8 +63,8 @@ vim.g.maplocalleader = " "
 vim.opt.number = true -- 显示当前行的绝对行号
 vim.opt.relativenumber = true -- 显示相对行号（光标上下行显示距离）
 
-vim.opt.cursorline = true
-vim.opt.cursorlineopt = "number"
+-- vim.opt.cursorline = true
+-- vim.opt.cursorlineopt = "number"
 
 --------------------------------
 -- neovide
