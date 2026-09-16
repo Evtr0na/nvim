@@ -28,13 +28,7 @@ return {
         -- fzf 原生排序器（已手动构建，此处保留 build 以便日后更新）
         {
             "nvim-telescope/telescope-fzf-native.nvim",
-            build = function()
-                if vim.fn.has("win32") == 1 then
-                    return "mingw32-make"
-                else
-                    return "make"
-                end
-            end,
+            build = vim.fn.has("win32") == 1 and "mingw32-make" or "make",
         },
 
         -- zoxide 智能目录跳转

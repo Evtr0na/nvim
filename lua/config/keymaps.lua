@@ -9,19 +9,6 @@ local map = vim.keymap.set
 --"smjonas/inc-rename.nvim",
 -- =========================================================
 
-map("n", "<leader>rn", function()
-    local ft = vim.bo.filetype
-
-    if ft == "gdshader" or ft == "gdshaderinc" then
-        vim.cmd("GDShaderRename")
-        return
-    end
-
-    vim.cmd("IncRename " .. vim.fn.expand("<cword>"))
-end, {
-    desc = "Incremental Rename",
-})
-
 -- Ctrl+上下：调整窗口高度
 map("n", "<C-Down>", "<cmd>resize +2<cr>", { desc = "增大窗口高度", noremap = true, silent = true })
 map("n", "<C-Up>", "<cmd>resize -2<cr>", { desc = "减小窗口高度", noremap = true, silent = true })
@@ -137,10 +124,6 @@ map("v", "<C-_>", "gc", { remap = true, desc = "Comment Selection" })
 map("i", "<C-/>", "<C-o>gcc", { remap = true, desc = "Comment Line in Insert Mode" })
 map("i", "<C-_>", "<C-o>gcc", { remap = true, desc = "Comment Line in Insert Mode" })
 
--- Space + R 重命名
-map("n", "<leader>r", vim.lsp.buf.rename, {
-    desc = "Rename Symbol",
-})
 
 
 -- =========================================================
