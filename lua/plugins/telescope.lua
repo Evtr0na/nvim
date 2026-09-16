@@ -1,11 +1,137 @@
 --模糊搜索，
 
+local function get_godot_root()
+    local bufname = vim.api.nvim_buf_get_name(0)
+    local start = bufname ~= "" and bufname or vim.fn.getcwd()
+
+    return vim.fs.root(start, "project.godot")
+end
+
+local function godot_globs()
+-- 在godot 项目中仅能搜索到
+    return {
+        "*.glsl",
+        "*.gd",
+        "*.gdshader",
+        "*.gdshaderinc",
+    }
+end
+
 return {
     "nvim-telescope/telescope.nvim",
 
     keys = {
-        { "<leader>f", "<cmd>Telescope find_files<cr>", desc = "Find File" },
-        { "<leader>j", "<cmd>Telescope live_grep<cr>", desc = "Search Text" },
+        {
+            "<leader>f",
+
+            function()
+                local builtin = require("telescope.builtin")
+                local root = get_godot_root()
+
+                if root then
+                    -- Godot 项目：只搜索脚本和 shader
+                    if vim.fn.executable("fd") == 1 then
+                        builtin.find_files({
+                            cwd = root,
+                            find_command = {
+                                "fd",
+                                "--type",
+                                "f",
+                                "--hidden",
+                                "--follow",
+
+                                "--extension",
+                                "gd",
+
+                                "--extension",
+                                "gdshader",
+
+                                "--extension",
+                                "gdshaderinc",
+                            },
+                        })
+                    else
+                        -- 没有 fd 时用 rg
+                        builtin.find_files({
+                            cwd = root,
+                            find_command = {
+                                "rg",
+                                "--files",
+                                "--hidden",
+                                "--follow",
+                                "--glob",
+                                "*.gd",
+                                "--glob",
+                                "*.gdshader",
+                                "--glob",
+                                "*.gdshaderinc",
+                            },
+                        })
+                    end
+
+                    return
+                end
+
+                -- 普通项目
+                builtin.find_files()
+            end,
+
+            desc = "Find File",
+        },
+
+        {
+            "<leader>j",
+            function()
+                local builtin = require("telescope.builtin")
+                local root = get_godot_root()
+
+                if root then
+                    builtin.live_grep({
+                        cwd = root,
+                        glob_pattern = godot_globs(),
+                    })
+                    return
+                end
+
+                builtin.live_grep()
+            end,
+            desc = "Search Text",
+        },
+
+        {
+            "<leader>b",
+            "<cmd>Telescope buffers<cr>",
+            desc = "List Buffers",
+        },
+
+        {
+            "gR",
+            function()
+                local builtin = require("telescope.builtin")
+                local root = get_godot_root()
+
+                if root then
+                    builtin.grep_string({
+                        cwd = root,
+                        additional_args = function()
+                            return {
+                                "--glob",
+                                "*.gd",
+                                "--glob",
+                                "*.gdshader",
+                                "--glob",
+                                "*.gdshaderinc",
+                            }
+                        end,
+                    })
+                    return
+                end
+
+                builtin.grep_string()
+            end,
+            desc = "Grep String",
+        },
+
         { "<leader>b", "<cmd>Telescope buffers<cr>", desc = "List Buffers" },
         -- { "<leader>h", "<cmd>Telescope help_tags<cr>", desc = "Help Tags" },
         { "gr", "<cmd>Telescope lsp_references<cr>", desc = "lise reference" },
@@ -51,10 +177,27 @@ return {
         return {
             defaults = {
                 file_ignore_patterns = {
-                    "vimdow",
-                    "%.uid$",
-                    "%.import$",
-                    ".git",
+                    -- ".git",
+                    --
+                    -- "vimdow",
+                    -- "addons",
+                    --
+                    -- "%.uid$",
+                    -- "%.scn$",
+                    -- "%.Object",
+                    -- "%.md5",
+                    -- "%.res$",
+                    -- "%.cache$",
+                    -- "%.cfg$",
+                    "%.ttf$",
+                    "%.png$",
+                    "%.glb$",
+                    -- "%.import$",
+                    -- "%.tmp$",
+                    -- "%.tscn$",
+                    -- "%.import$",
+                    "%.svg$",
+                    -- "%.editorconfig$",
                 },
 
                 path_display = { "smart" },

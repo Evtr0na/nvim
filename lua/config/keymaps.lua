@@ -25,11 +25,6 @@ vim.opt.clipboard = "unnamedplus"
 -- 基础设置
 -- =========================================================
 
--- 你 VS Code 里的 jj -> Esc
---
---
-
---
 map("i", "jj", "<Esc>", { desc = "Exit Insert Mode" })
 
 -- =========================================================
@@ -55,39 +50,6 @@ map("n", "<C-h>", "<C-w>h", { desc = "Go to Left Window", remap = true })
 map("n", "<C-j>", "<C-w>j", { desc = "Go to Lower Window", remap = true })
 map("n", "<C-k>", "<C-w>k", { desc = "Go to Upper Window", remap = true })
 map("n", "<C-l>", "<C-w>l", { desc = "Go to Right Window", remap = true })
-
--- =========================================================
--- 搜索-Search--转移到telescope里了
--- =========================================================
--- map("n", "<leader>z", function()
---     require("telescope").extensions.zoxide.list()
--- end, { desc = "Zoxide jump" })
---
--- map("n", "<leader>b", function()
---     require("telescope.builtin").buffers()
--- end, { desc = "List Buffers" })
---
--- map("n", "<leader>h", function()
---     require("telescope.builtin").help_tags()
--- end, { desc = "Help Tags" })
---
--- map("n", "<leader>z", function()
---     require("telescope").extensions.zoxide.list()
--- end, { desc = "Zoxide jump" })
---
--- map("n", "<leader>o", function()
---     require("telescope.builtin").lsp_document_symbols()
--- end, { desc = "Document Symbols" })
---
--- -- Space + F
--- map("n", "<leader>f", function()
---     require("telescope.builtin").find_files()
--- end, { desc = "Find File" })
---
--- -- Space + J
--- map("n", "<leader>j", function()
---     require("telescope.builtin").live_grep()
--- end, { desc = "Search Text" })
 
 -- Ctrl+N 清掉搜索高亮
 map("n", "<C-n>", "<cmd>nohlsearch<cr>", { desc = "Clear Search Highlight" })
@@ -367,17 +329,6 @@ end, {
 })
 
 -- =========================================================
--- LSP
--- =========================================================
-
--- gr：
--- 你的 VS Code：find references
--- LazyVim 默认本来就是这个
--- map("n", "gr", vim.lsp.buf.references, {
---     desc = "References",
--- })
-
--- =========================================================
 -- Leader + s + r
 -- 当前文件批量替换
 -- =========================================================
@@ -392,22 +343,90 @@ end, {
 -- Undo / Redo
 -- =========================================================
 
--- Ctrl+Z → Undo
--- map("n", "<C-z>", "u", {
---     desc = "Undo",
--- })
-
 -- 用大写 U 作为 Redo（非常顺手且无需复杂终端协议支持）
 map("n", "U", "<C-r>", { desc = "Redo" })
 
--- Ctrl+Shift+Z → Redo
--- map("n", "<C-S-z>", "<C-r>", { desc = "Redo" })
--- map("n", "<C-Z>", "<C-r>", { desc = "Redo" })
--- -- Visual 模式也保持一致
--- map("x", "<C-z>", "<Esc>u", {
---     desc = "Undo",
--- })
 
--- map("x", "<C-S-z>", "<Esc><C-r>", {
---     desc = "Redo",
--- })
+
+
+-- =========================================================
+-- 跨文件重新命名 : 在nivm中使用grn命名，自动wa保存，lsp restart，
+-- =========================================================
+
+map("n", "grn", function()
+    -- 非 GDScript：保持 Neovim 原生行为
+    if vim.bo.filetype ~= "gdscript" then
+        vim.lsp.buf.rename()
+        return
+    end
+
+    local bufnr = vim.api.nvim_get_current_buf()
+
+    -- 每个 buffer 一个临时 autocmd group
+    local group = vim.api.nvim_create_augroup(
+        "gdscript_rename_" .. bufnr,
+        { clear = true }
+    )
+
+    -- 等真正的 textDocument/rename 请求完成
+    vim.api.nvim_create_autocmd("LspRequest", {
+        group = group,
+        buffer = bufnr,
+        callback = function(ev)
+            local request = ev.data and ev.data.request
+
+            if not request then
+                return
+            end
+
+            if request.method ~= "textDocument/rename" then
+                return
+            end
+
+            if request.type ~= "complete" then
+                return
+            end
+
+            -- 这次 rename 已经结束，不再监听
+            vim.api.nvim_clear_autocmds({
+                group = group,
+                buffer = bufnr,
+            })
+
+            local client = vim.lsp.get_client_by_id(ev.data.client_id)
+
+            -- LspRequest complete 发生时，rename 的 WorkspaceEdit
+            -- 随后会被 Neovim handler 应用，因此再 schedule 一次，
+            -- 确保 :wa 在修改真正进入 buffer 之后执行。
+            vim.schedule(function()
+                local ok, err = pcall(vim.cmd, "wall")
+
+                if not ok then
+                    vim.notify(
+                        "GDScript rename 保存失败: " .. tostring(err),
+                        vim.log.levels.ERROR
+                    )
+                    return
+                end
+
+                -- Neovim 0.12+
+                if vim.fn.exists(":lsp") == 2 then
+                    if client then
+                        vim.cmd("lsp restart " .. client.name)
+                    else
+                        vim.cmd("lsp restart")
+                    end
+
+                -- Neovim 0.11 / nvim-lspconfig
+                elseif vim.fn.exists(":LspRestart") == 2 then
+                    vim.cmd("LspRestart")
+                end
+            end)
+        end,
+    })
+
+    -- 仍然使用原生 rename
+    vim.lsp.buf.rename()
+end, {
+    desc = "Rename Symbol",
+})
