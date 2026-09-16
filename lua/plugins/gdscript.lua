@@ -24,12 +24,14 @@ return {
         },
         config = function()
             require("godotdev").setup({
+
+                autostart_editor_server = false,
+
                 editor_host = "127.0.0.1",
                 editor_port = 6005,
                 godot_path = "D:\\2zhuomian\\Projects\\GameDev\\Engines\\4.7.1-stable\\Godot471.exe",
 
                 csharp = false,
-                autostart_editor_server = false,
                 formatter = false,
 
                 inline_hints = {
@@ -56,6 +58,8 @@ return {
                     "gdscript",
                 },
             })
+
+
 
             vim.lsp.enable("gdscript")
         end,

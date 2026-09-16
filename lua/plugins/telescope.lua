@@ -19,7 +19,7 @@ end
 
 return {
     "nvim-telescope/telescope.nvim",
-
+	enabled = false,
     keys = {
         {
             "<leader>f",
@@ -34,6 +34,7 @@ return {
                         builtin.find_files({
                             cwd = root,
                             find_command = {
+
                                 "fd",
                                 "--type",
                                 "f",

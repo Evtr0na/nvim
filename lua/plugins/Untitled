@@ -1,5 +1,2 @@
 
-17 lines yanked
-...multicursor.nvim/lua/multicursor-nvim/cursor-manager.lua:1879: attempt to index field 'signs' (a nil value)
-...multicursor.nvim/lua/multicursor-nvim/cursor-manager.lua:760: Invalid 'ns_id': 0
-...multicursor.nvim/lua/multicursor-nvim/cursor-manager.lua:760: Invalid 'ns_id': 0
+true table: 0x02473164fc20

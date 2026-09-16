@@ -1,18 +1,3 @@
--- Autocmds are automatically loaded on the VeryLazy event
--- Default autocmds that are always set: https://github.com/LazyVim/LazyVim/blob/main/lua/lazyvim/config/autocmds.lua
---
--- Add any additional autocmds here
--- with `vim.api.nvim_create_autocmd`
---
--- Or remove existing autocmds by their group name (which is prefixed with `lazyvim_` for the defaults)
--- e.g. vim.api.nvim_del_augroup_by_name("lazyvim_wrap_spell")
---
---
---
---
---
---
-
 --  彻底禁用原生 runtime 插件（节省 ~10ms）
 -- 在你的 init.lua 最最顶端（require("lazy") 之前）加入禁用列表：
 local disabled_builtins = {
@@ -40,27 +25,28 @@ for _, plugin in ipairs(disabled_builtins) do
     vim.g["loaded_" .. plugin] = 1
 end
 
----------------------------------------------------------------------------
--- 修复nvim的cmd乱码
----------------------------------------------------------------------------
+-----------------------------------------
+-- listen to Godot 127.0.0.1:6666 
+-----------------------------------------
+--Godot / Text Editor / External
+-- Exec Path :     C:\Users\SDD\AppData\Local\nvim\lua\tools\godot-nvim.cmd
+-- Exec Flags :    "{file}" {line} {col}
 
-vim.api.nvim_create_autocmd("TermOpen", {
-    callback = function(args)
-        -- 不要给 yazi / lazygit 等 TUI 乱发 shell 命令
-        if vim.bo[args.buf].filetype == "yazi" then
-            return
-        end
+local project_root = vim.fn.getcwd()
+local godot_project = project_root .. "/project.godot"
 
-        local name = vim.api.nvim_buf_get_name(args.buf):lower()
+if vim.fn.filereadable(godot_project) == 1 then
+    local godot_server = "127.0.0.1:6666"
 
-        -- 只处理真正的 cmd.exe
-        if not name:find("cmd%.exe") then
-            return
-        end
+    local ok, result = pcall(vim.fn.serverstart, godot_server)
 
-        local job_id = vim.b[args.buf].terminal_job_id
-        if job_id then
-            vim.fn.chansend(job_id, "chcp 65001 >nul\r")
-        end
-    end,
-})
+    if ok then
+        vim.notify("Godot editor server: " .. result)
+    else
+        vim.notify(
+            "Failed to start Godot editor server: " .. tostring(result),
+            vim.log.levels.WARN
+        )
+    end
+end
+
