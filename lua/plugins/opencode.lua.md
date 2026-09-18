@@ -22,6 +22,7 @@ end
 
 return {
     "nickjvandyke/opencode.nvim",
+    -- enabled = false,
 
     version = "*",
 
@@ -61,13 +62,13 @@ return {
         --         desc = "OpenCode New Session",
         --     },
         --
-        --     {
-        --         "<leader>os",
-        --         function()
-        --             require("opencode").command("session.select")
-        --         end,
-        --         desc = "OpenCode Sessions",
-        --     },
+        -- {
+        --     "<leader>os",
+        --     function()
+        --         require("opencode").command("session.select")
+        --     end,
+        --     desc = "OpenCode Sessions",
+        -- },
         --
         --     {
         --         "<leader>oc",

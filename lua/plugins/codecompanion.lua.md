@@ -1,19 +1,10 @@
--- setx DEEPSEEK_API_KEY "你的API_KEY"
 return {
     "olimorris/codecompanion.nvim",
-
-    -- 固定版本，避免以后更新突然出现 breaking change
-    tag = "v19.21.0",
-
-    -- lazy = true,
-    -- event = "VeryLazy",
+	enabled = false,
+    -- 你现在这里是 false，一定要改成 true
 
     cmd = {
-        "CodeCompanion",
         "CodeCompanionChat",
-        "CodeCompanionCmd",
-        "CodeCompanionActions",
-        "CodeCompanionCLI",
     },
 
     dependencies = {
@@ -21,105 +12,133 @@ return {
     },
 
     keys = {
+        -- 新开一个 DSH Chat
         {
             "<leader>ao",
-            "<cmd>CodeCompanionChat adapter=opencode<cr>",
+            "<cmd>CodeCompanionChat adapter=dsh<cr>",
             mode = { "n", "v" },
-            desc = "OpenCode Agent",
+            desc = "DSH Agent",
         },
-        -- {
-        --     "<leader>ao",
-        --     "<cmd>CodeCompanionCLI<cr>",
-        --     desc = "OpenCode",
-        -- },
-        {
-            "<leader>aa",
-            "<cmd>CodeCompanionActions<cr>",
-            mode = { "n", "v" },
-            desc = "AI Actions",
-        },
+
+        -- 显示/隐藏当前 Chat
         {
             "<leader>ac",
             "<cmd>CodeCompanionChat Toggle<cr>",
             mode = { "n", "v" },
-            desc = "AI Chat",
+            desc = "Toggle DSH Chat",
         },
+
+        -- 把选中的代码加入当前 Chat
         {
             "<leader>ad",
             "<cmd>CodeCompanionChat Add<cr>",
             mode = "v",
-            desc = "Add Selection to AI Chat",
-        },
-        {
-            "<leader>ai",
-            "<cmd>CodeCompanion<cr>",
-            mode = "v",
-            desc = "AI Inline Edit",
+            desc = "Add Selection to DSH",
         },
     },
 
     opts = {
         adapters = {
-            http = {
-                root_deepseek = function()
-                    return require("codecompanion.adapters").extend("deepseek", {
-                        name = "root_deepseek",
-                        formatted_name = "DeepSeek V4 Flash",
+            acp = {
+                dsh = function()
+                    local helpers =
+                        require("codecompanion.adapters.acp.helpers")
 
-                        -- 你的中转地址
-                        url = "https://lee.root-shell.xyz/v1/chat/completions",
+                    local command
 
-                        env = {
-                            -- 这里只写环境变量名，不写真实 API Key
-                            api_key = "DEEPSEEK_API_KEY",
+                    if vim.fn.has("win32") == 1 then
+                        -- Windows:
+                        -- npm 安装的 dsh 一般实际是 dsh.cmd，
+                        -- 因此通过 cmd.exe 启动最稳。
+                        command = {
+                            vim.env.COMSPEC or "cmd.exe",
+                            "/d",
+                            "/s",
+                            "/c",
+                            "dsh --profile acp",
+                        }
+                    else
+                        command = {
+                            "dsh",
+                            "--profile",
+                            "acp",
+                        }
+                    end
+
+                    return {
+                        name = "dsh",
+                        formatted_name = "DeepSeek Harness",
+                        type = "acp",
+
+                        roles = {
+                            llm = "assistant",
+                            user = "user",
                         },
 
-                        schema = {
-                            model = {
-                                default = "deepseek-v4-flash",
+                        commands = {
+                            default = command,
+                        },
+
+                        defaults = {
+                            mcpServers = {},
+                            timeout = 20000,
+                        },
+
+                        parameters = {
+                            protocolVersion = 1,
+
+                            clientCapabilities = {
+                                fs = {
+                                    readTextFile = true,
+                                    writeTextFile = true,
+                                },
+                            },
+
+                            clientInfo = {
+                                name = "CodeCompanion.nvim",
+                                version = "1.0.0",
                             },
                         },
-                    })
+
+                        handlers = {
+                            setup = function(self)
+                                return true
+                            end,
+
+                            -- DSH ACP 本身不要求客户端认证
+                            auth = function(self)
+                                return true
+                            end,
+
+                            form_messages = function(
+                                self,
+                                messages,
+                                capabilities
+                            )
+                                return helpers.form_messages(
+                                    self,
+                                    messages,
+                                    capabilities
+                                )
+                            end,
+
+                            on_exit = function(self, code)
+                            end,
+                        },
+                    }
                 end,
             },
         },
 
         interactions = {
+            -- 唯一使用的 interaction
             chat = {
-                adapter = {
-                    name = "root_deepseek",
-                    model = "deepseek-v4-flash",
-                },
+                adapter = "dsh",
             },
-
-            inline = {
-                adapter = {
-                    name = "root_deepseek",
-                    model = "deepseek-v4-flash",
-                },
-            },
-
-            cmd = {
-                adapter = {
-                    name = "root_deepseek",
-                    model = "deepseek-v4-flash",
-                },
-            },
-            -- cli = {
-            --     agent = "opencode",
-            --
-            --     agents = {
-            --         opencode = {
-            --             cmd = "opencode",
-            --             args = {},
-            --             description = "OpenCode CLI",
-            --             provider = "terminal",
-            --         },
-            --     },
-            -- },
         },
 
         opts = {
+            -- 调试时可以改成 DEBUG
             log_level = "ERROR",
         },
     },

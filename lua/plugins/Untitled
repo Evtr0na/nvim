@@ -1,2 +1,48 @@
 
-true table: 0x02473164fc20
+[WARN] 2026-09-18 14:54:40
+[Prompt Library] Install the `yaml` treesitter parser to parse frontmatter
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Missing frontmatter, name or interaction in `C:/Users/SDD/AppData/Local/nvim-data/lazy/codecompanion.nvim/lua/codecompanion/prompt_library/builtins/code_workflow.md`
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Install the `yaml` treesitter parser to parse frontmatter
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Missing frontmatter, name or interaction in `C:/Users/SDD/AppData/Local/nvim-data/lazy/codecompanion.nvim/lua/codecompanion/prompt_library/builtins/commit.md`
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Install the `yaml` treesitter parser to parse frontmatter
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Missing frontmatter, name or interaction in `C:/Users/SDD/AppData/Local/nvim-data/lazy/codecompanion.nvim/lua/codecompanion/prompt_library/builtins/explain.md`
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Install the `yaml` treesitter parser to parse frontmatter
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Missing frontmatter, name or interaction in `C:/Users/SDD/AppData/Local/nvim-data/lazy/codecompanion.nvim/lua/codecompanion/prompt_library/builtins/fix.md`
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Install the `yaml` treesitter parser to parse frontmatter
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Missing frontmatter, name or interaction in `C:/Users/SDD/AppData/Local/nvim-data/lazy/codecompanion.nvim/lua/codecompanion/prompt_library/builtins/help.md`
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Install the `yaml` treesitter parser to parse frontmatter
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Missing frontmatter, name or interaction in `C:/Users/SDD/AppData/Local/nvim-data/lazy/codecompanion.nvim/lua/codecompanion/prompt_library/builtins/inline_prompt.md`
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Install the `yaml` treesitter parser to parse frontmatter
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Missing frontmatter, name or interaction in `C:/Users/SDD/AppData/Local/nvim-data/lazy/codecompanion.nvim/lua/codecompanion/prompt_library/builtins/lsp.md`
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Install the `yaml` treesitter parser to parse frontmatter
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Missing frontmatter, name or interaction in `C:/Users/SDD/AppData/Local/nvim-data/lazy/codecompanion.nvim/lua/codecompanion/prompt_library/builtins/unit_tests.md`
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Install the `yaml` treesitter parser to parse frontmatter
+[WARN] 2026-09-18 14:54:42
+[Prompt Library] Missing frontmatter, name or interaction in `C:/Users/SDD/AppData/Local/nvim-data/lazy/codecompanion.nvim/lua/codecompanion/prompt_library/builtins/upgrades/tools.md`
+[WARN] 2026-09-18 14:55:01
+[MCP] No servers found in your configuration
+ACP: Changed `Reasoning effort` to `Max`
+3 more lines; before #3  1 second ago
+[WARN] 2026-09-18 14:57:02
+No messages to submit
+[WARN] 2026-09-18 14:58:09
+This agent does not support loading sessions
+Switched to `default` command
+[WARN] 2026-09-18 14:59:41
+[MCP] No servers found in your configuration

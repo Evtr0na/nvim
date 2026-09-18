@@ -2,6 +2,86 @@
 --  Custom Commands
 ------------------------------------------------------------
 
+------------------------------------------------------------
+-- copy where is cursor in
+------------------------------------------------------------
+
+local function char_col(buf, line_nr, byte_col)
+  local line = vim.api.nvim_buf_get_lines(buf, line_nr - 1, line_nr, false)[1] or ""
+
+  -- getpos() 的列是 1-based byte index
+  local byte_index = math.max(byte_col - 1, 0)
+
+  local ok, char_index = pcall(vim.str_utfindex, line, byte_index)
+  if not ok then
+    return byte_col
+  end
+
+  return char_index + 1
+end
+
+vim.api.nvim_create_user_command("DshCtx", function(opts)
+  local buf = vim.api.nvim_get_current_buf()
+  local file = vim.api.nvim_buf_get_name(buf)
+
+  if file == "" then
+    vim.notify("当前 buffer 没有关联文件", vim.log.levels.WARN)
+    return
+  end
+
+  file = vim.fs.normalize(file):gsub("\\", "/")
+
+  local text
+
+  if opts.range > 0 then
+    local start_pos = vim.fn.getpos("'<")
+    local end_pos = vim.fn.getpos("'>")
+
+    local start_line = start_pos[2]
+    local start_col = char_col(buf, start_line, start_pos[3])
+
+    local end_line = end_pos[2]
+    local end_col = char_col(buf, end_line, end_pos[3])
+
+    text = string.format(
+      "%s#L%d:C%d-L%d:C%d",
+      file,
+      start_line,
+      start_col,
+      end_line,
+      end_col
+    )
+  else
+    local pos = vim.api.nvim_win_get_cursor(0)
+
+    local line = pos[1]
+    local byte_col = pos[2]
+
+    local current_line =
+      vim.api.nvim_buf_get_lines(buf, line - 1, line, false)[1] or ""
+
+    local col = vim.str_utfindex(current_line, byte_col) + 1
+
+    text = string.format(
+      "%s#L%d:C%d",
+      file,
+      line,
+      col
+    )
+  end
+
+  vim.fn.setreg("+", text)
+  vim.fn.setreg('"', text)
+
+  vim.notify("已复制:\n" .. text)
+end, {
+  range = true,
+  desc = "Copy current file/selection position for DSH",
+})
+
+
+
+
 ---------------------------------------------------------------------------
 --  Open UTF-8 CMD
 ---------------------------------------------------------------------------
