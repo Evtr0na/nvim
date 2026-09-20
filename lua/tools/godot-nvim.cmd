@@ -1,13 +1,12 @@
 @echo off
+setlocal
 
-set "SERVER=127.0.0.1:6666"
-set "FILE=%~1"
-set "LINE=%~2"
-set "COL=%~3"
+set "ROUTER=%~dp0godot-nvim-router.ps1"
 
-if "%LINE%"=="" set "LINE=1"
-if "%COL%"=="" set "COL=1"
+powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass ^
+  -File "%ROUTER%" ^
+  -FilePath "%~1" ^
+  -Line "%~2" ^
+  -Column "%~3"
 
-nvim --server %SERVER% --remote-expr "[execute('drop ' . fnameescape('%FILE%')), cursor(%LINE%, %COL%)]" >nul 2>&1
-
-exit /b 0
+exit /b %ERRORLEVEL%

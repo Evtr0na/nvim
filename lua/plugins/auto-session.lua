@@ -20,7 +20,7 @@ return {
             auto_restore_last_session = false,
 
             -- :cd 时不要自动切换 session
-            cwd_change_handling = false,
+            cwd_change_handling = true,
 
             -- alpha 启动页不保存
             bypass_save_filetypes = {
