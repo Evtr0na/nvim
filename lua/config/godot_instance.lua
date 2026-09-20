@@ -18,6 +18,7 @@ local config = {
     preserve_focus_on_start = true,
     focus_guard_timeout_ms = 5000,
     focus_guard_poll_ms = 40,
+    lsp_port_poll_ms = 25,
 }
 
 local state = {
@@ -108,10 +109,31 @@ local function own_server_exists(address)
     return false, nil
 end
 
+local function peer_server_reachable(address)
+    if not address or address == "" then
+        return false
+    end
+
+    -- serverlist() only reports servers owned by this Nvim on Windows. Probe
+    -- the named pipe first so another Nvim owning it is a normal collision,
+    -- not an expected serverstart() EADDRINUSE failure.
+    local ok, channel = pcall(vim.fn.sockconnect, "pipe", address, { rpc = true })
+    if not ok or type(channel) ~= "number" or channel <= 0 then
+        return false
+    end
+
+    pcall(vim.fn.chanclose, channel)
+    return true
+end
+
 local function claim_server(address)
     local ours, existing = own_server_exists(address)
     if ours then
         return true, existing
+    end
+
+    if peer_server_reachable(address) then
+        return false, "address already in use"
     end
 
     local ok, result = pcall(vim.fn.serverstart, address)
@@ -307,7 +329,7 @@ local function wait_for_port(port, expected_open, timeout_ms, generation, callba
                 return
             end
 
-            vim.defer_fn(check, 100)
+            vim.defer_fn(check, math.max(tonumber(config.lsp_port_poll_ms) or 25, 10))
         end)
     end
 
@@ -561,7 +583,7 @@ local function enable_lsp()
 end
 
 local function patch_lsp()
-    vim.lsp.config("gdscript", {
+    local lsp_config = {
         root_dir = function(bufnr, on_dir)
             local active_root = state.active_root
             if not active_root then
@@ -575,7 +597,18 @@ local function patch_lsp()
 
             on_dir(active_root)
         end,
-    })
+    }
+
+    -- godotdev.nvim currently launches an external `ncat` process on Windows.
+    -- Neovim already has a native TCP LSP transport, so use it directly:
+    --   * no extra ncat process
+    --   * no ncat startup/exit noise
+    --   * connects immediately once Godot's port is ready
+    if vim.lsp.rpc and type(vim.lsp.rpc.connect) == "function" and state.lsp_port then
+        lsp_config.cmd = vim.lsp.rpc.connect(HOST, state.lsp_port)
+    end
+
+    vim.lsp.config("gdscript", lsp_config)
 end
 
 local function stop_dap_session()
@@ -1242,6 +1275,27 @@ function M.godotdev_opts(opts)
     return opts
 end
 
+local function disable_godotdev_editor_server()
+    -- The project-specific RPC pipe is owned by this manager. godotdev.nvim's
+    -- generic editor-server autostart layer is redundant in this architecture
+    -- and can race with another Nvim instance, so remove the automatic hook.
+    pcall(vim.api.nvim_del_augroup_by_name, "godotdev_start_editor_server")
+
+    if vim.fn.exists(":GodotStartEditorServer") == 2 then
+        pcall(vim.api.nvim_del_user_command, "GodotStartEditorServer")
+    end
+
+    vim.api.nvim_create_user_command("GodotStartEditorServer", function()
+        if state.project_server then
+            notify("Godot editor RPC is already managed by this Nvim:\n" .. state.project_server)
+        else
+            notify("Godot editor RPC will be created automatically when this Nvim binds a Godot project")
+        end
+    end, {
+        desc = "Show the project-specific Godot editor RPC server managed by godot_instance",
+    })
+end
+
 function M.after_godotdev_setup(opts)
     opts = opts or {}
 
@@ -1251,11 +1305,13 @@ function M.after_godotdev_setup(opts)
 
     ensure_port_pair()
 
-    -- godotdev.setup() enables gdscript immediately. Keep it disabled until
-    -- this Nvim owns a project and its Godot LSP port is ready.
+    -- gdscript.lua suppresses godotdev's one eager vim.lsp.enable() call.
+    -- Keep it disabled here as a second guard until the managed Godot LSP
+    -- TCP port is actually accepting connections.
     disable_lsp()
     patch_lsp()
     patch_dap()
+    disable_godotdev_editor_server()
     state.plugin_ready = true
 end
 
