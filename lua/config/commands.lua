@@ -3,11 +3,15 @@
 ------------------------------------------------------------
 
 ------------------------------------------------------------
---  godot多开相关
+--  godot 多开相关命令
+--
+--  :GodotHere / :GodotProject / :GodotRestart / :GodotStop /
+--  :GodotStatus / :GodotPaths
+--
+--  全部由插件 godot-instance.nvim 自己注册（它由 lua/plugins/gdscript.lua
+--  加载，插件里的 plugin/godot-instance.lua 会在启动阶段引导）。
 ------------------------------------------------------------
 
-
-require("config.godot_instance").bootstrap()
 ------------------------------------------------------------
 -- copy where is cursor in
 ------------------------------------------------------------

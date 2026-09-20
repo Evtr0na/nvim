@@ -1,8 +1,15 @@
--- godotscript 的 LSP
+-- Godot 多开 + Godot LSP
 --
--- 修 bug：Windows 无法打开场景树
+-- 逻辑全部在插件 godot-instance.nvim 里：
+--   复用优先（已经在跑的 Godot 直接挂上去）/ 托管实例保活 / 端口分配 /
+--   项目专属 RPC 管道 / 优雅关闭。
 --
--- 在 lua/godotdev/scene_tree.lua 找到：
+-- 这里只剩两件事：
+--   1. 插件本体
+--   2. godotdev 的偏好设置（setup 由插件接管）
+--
+-- 修 bug 备注：godotdev 的场景树在 Windows 上打不开时，要改
+-- lua/godotdev/scene_tree.lua：
 --
 -- if not path:match("^/") then
 --     absolute = root .. "/" .. path
@@ -14,7 +21,31 @@
 --     absolute = root .. "/" .. path
 -- end
 
+local GODOT_PATH = "D:\\2zhuomian\\Projects\\GameDev\\Engines\\4.7.1-stable\\Godot471.exe"
+
 return {
+    ------------------------------------------------------------
+    -- Godot 实例管理器（Nvim 多开 + Godot 多开）
+    ------------------------------------------------------------
+    {
+        dir = "D:/2zhuomian/app/neovim-tool/godot-instance.nvim",
+
+        -- 启动时就加载：VimEnter 的自动绑定必须在启动阶段注册好。
+        -- 插件本身很便宜（纯 Lua，~2ms），godotdev 依然是按需加载的。
+        lazy = false,
+
+        opts = {
+            godot_path = GODOT_PATH,
+        },
+
+        config = function(_, opts)
+            require("godot-instance").setup(opts)
+        end,
+    },
+
+    ------------------------------------------------------------
+    -- godotdev.nvim（gdscript LSP 本体）
+    ------------------------------------------------------------
     {
         "Mathijs-Bakker/godotdev.nvim",
 
@@ -22,6 +53,7 @@ return {
             "gd",
             "gdscript",
         },
+
         dependencies = {
             "mfussenegger/nvim-dap",
             "rcarriga/nvim-dap-ui",
@@ -29,20 +61,11 @@ return {
         },
 
         opts = {
-            ------------------------------------------------------------
-            -- Godot
-            ------------------------------------------------------------
+            godot_path = GODOT_PATH,
 
-            godot_path = "D:\\2zhuomian\\Projects\\GameDev\\Engines\\4.7.1-stable\\Godot471.exe",
-
-            -- 必须保持 false。
-            -- Godot -> Nvim 的 project-specific RPC pipe
-            -- 由 godot_instance 自己管理。
+            -- 必须保持 false：Godot -> Nvim 的 project-specific RPC pipe
+            -- 由 godot-instance 自己管理。
             autostart_editor_server = false,
-
-            ------------------------------------------------------------
-            -- godotdev
-            ------------------------------------------------------------
 
             csharp = false,
             formatter = false,
@@ -50,6 +73,7 @@ return {
             inline_hints = {
                 enabled = false,
             },
+
             scene_tree = {
                 icons = false,
 
@@ -60,89 +84,15 @@ return {
             },
         },
 
+        -- 交给插件接管：端口注入 / 拦掉 godotdev 那次过早的
+        -- vim.lsp.enable("gdscript") / DAP 端口 / 禁掉 godotdev 自带的
+        -- 通用 editor-server 自动层。
         config = function(_, opts)
-            local instance = require("config.godot_instance")
+            require("godot-instance").godotdev(opts)
 
-            ------------------------------------------------------------
-            -- 1. 在 godotdev.setup() 之前分配当前 Nvim 独立的端口。
-            ------------------------------------------------------------
-
-            opts = instance.godotdev_opts(opts)
-
-            ------------------------------------------------------------
-            -- 2. godotdev.nvim 当前版本会在 setup() 内立刻执行：
-            --
-            --      vim.lsp.enable("gdscript")
-            --
-            -- 这时 Godot 往往还没把 LSP TCP port 启起来，Windows 下
-            -- ncat 会先连接失败并留下：
-            --
-            --      Client gdscript quit with exit code 1
-            --
-            -- 这里只拦截 setup() 内这一次“过早 enable”。setup 返回后
-            -- 立即恢复原函数。真正的 enable 由 godot_instance 在确认
-            -- Godot LSP port 已经可连接后执行。
-            ------------------------------------------------------------
-
-            local original_lsp_enable = vim.lsp.enable
-
-            vim.lsp.enable = function(name, enable)
-                if name == "gdscript" and enable ~= false then
-                    return {}
-                end
-
-                return original_lsp_enable(name, enable)
-            end
-
-            local ok, setup_error = xpcall(function()
-                require("godotdev").setup(opts)
-            end, debug.traceback)
-
-            -- 无论 setup 成功还是失败都必须恢复，不能污染其它 LSP。
-            vim.lsp.enable = original_lsp_enable
-
-            if not ok then
-                error(setup_error)
-            end
-
-            ------------------------------------------------------------
-            -- 3. 保留你自己的 gdscript filetype 限制。
-            ------------------------------------------------------------
-
-            vim.lsp.config("gdscript", {
-                filetypes = {
-                    "gdscript",
-                },
+            vim.keymap.set("n", "<leader>gs", "<cmd>GodotSceneTree<cr>", {
+                desc = "Godot Scene Tree",
             })
-
-            ------------------------------------------------------------
-            -- 4. setup 后交还给实例管理器。
-            --
-            -- godot_instance 会：
-            --   1. 保持 gdscript disabled，直到端口 ready
-            --   2. 安装 active-project root_dir gate
-            --   3. 修正动态 DAP port
-            --   4. 禁掉 godotdev 自己的通用 editor-server 自动层
-            ------------------------------------------------------------
-
-            instance.after_godotdev_setup({
-                godot_path = opts.godot_path,
-            })
-
-            ------------------------------------------------------------
-            -- 5. 快捷键
-            ------------------------------------------------------------
-
-            vim.keymap.set(
-                "n",
-                "<leader>gs",
-                "<cmd>GodotSceneTree<cr>",
-                {
-                    desc = "Godot Scene Tree",
-                }
-            )
-
-            -- 注意：这里不要再写 vim.lsp.enable("gdscript")。
         end,
     },
 }
