@@ -7,28 +7,16 @@
 -- 这里只剩两件事：
 --   1. 插件本体
 --   2. godotdev 的偏好设置（setup 由插件接管）
---
--- 修 bug 备注：godotdev 的场景树在 Windows 上打不开时，要改
--- lua/godotdev/scene_tree.lua：
---
--- if not path:match("^/") then
---     absolute = root .. "/" .. path
--- end
---
--- 改成：
---
--- if not path:match("^/") and not path:match("^%a:[/\\]") then
---     absolute = root .. "/" .. path
--- end
 
-local GODOT_PATH = "D:\\2zhuomian\\Projects\\GameDev\\Engines\\4.7.1-stable\\Godot471.exe"
+
+local GODOT_PATH = "D:/2zhuomian/Projects/GameDev/Engines/4.7.1-stable/Godot471.exe"
 
 return {
     ------------------------------------------------------------
     -- Godot 实例管理器（Nvim 多开 + Godot 多开）
     ------------------------------------------------------------
     {
-        dir = "D:/2zhuomian/app/neovim-tool/godot-instance.nvim",
+        dir = "D:/2zhuomian/app/source/godot-instance.nvim",
 
         -- 启动时就加载：VimEnter 的自动绑定必须在启动阶段注册好。
         -- 插件本身很便宜（纯 Lua，~2ms），godotdev 依然是按需加载的。
