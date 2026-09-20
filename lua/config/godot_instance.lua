@@ -19,6 +19,35 @@ local config = {
     focus_guard_timeout_ms = 5000,
     focus_guard_poll_ms = 40,
     lsp_port_poll_ms = 25,
+
+    ------------------------------------------------------------
+    -- 实例复用（省掉 Godot 编辑器冷启动的 5-6 秒）
+    ------------------------------------------------------------
+
+    -- 托管启动的 Godot 是否活过 Nvim。true 时下一次启动 Nvim 可以直接
+    -- 复用它，代价是它会留在后台，需要 :GodotStop 关掉。
+    keep_alive = true,
+
+    -- 总开关：启动时先找可复用的实例，找不到才托管启动。
+    reuse = true,
+
+    -- 是否也复用“不是本 Nvim 托管”的 Godot（也就是你自己开的那个）。
+    reuse_external = true,
+
+    -- 外部编辑器的 LSP 端口候选。对应 Godot 设置项
+    -- network/language_server/remote_port（默认 6005）。
+    reuse_external_ports = { 6005 },
+
+    -- 外部编辑器的 DAP 端口 = LSP 端口 + 这个偏移（6005 -> 6006）。
+    reuse_external_dap_offset = 1,
+
+    -- 复用外部编辑器之前，用 Godot 窗口标题里的项目名确认它开的确实是
+    -- 当前项目（Godot 4 的标题形如 "scene.tscn - 项目名 - Godot Engine"）。
+    -- 关掉会退化成“6005 上有东西就连”，有连错项目的风险。
+    reuse_external_verify = true,
+
+    -- 实例状态文件目录，nil = stdpath("state")/godot_instance
+    state_dir = nil,
 }
 
 local state = {
@@ -33,7 +62,11 @@ local state = {
     project_server = nil,
 
     godot_process = nil,
+    godot_process_pid = nil,
     generation = 0,
+
+    -- 复用来的实例：{ source = "managed" | "external", pid = number|nil }
+    adopted = nil,
 }
 
 local function notify(message, level)
@@ -157,6 +190,324 @@ local function release_server(address)
     pcall(vim.fn.serverstop, existing)
 end
 
+----------------------------------------------------------------------------
+-- 实例复用：状态持久化 + 存活探测
+--
+-- 托管启动的 Godot 现在会活过 Nvim，所以下一次启动 Nvim 可以直接复用同一个
+-- 编辑器，不必再等它冷启动。
+----------------------------------------------------------------------------
+
+local function state_dir()
+    return config.state_dir or vim.fs.joinpath(vim.fn.stdpath("state"), "godot_instance")
+end
+
+local function state_file()
+    return vim.fs.joinpath(state_dir(), "instances.json")
+end
+
+local function read_records()
+    if vim.fn.filereadable(state_file()) ~= 1 then
+        return {}
+    end
+
+    local ok_read, lines = pcall(vim.fn.readfile, state_file())
+    if not ok_read or type(lines) ~= "table" then
+        return {}
+    end
+
+    local ok_decode, decoded = pcall(vim.json.decode, table.concat(lines, "\n"))
+    if not ok_decode or type(decoded) ~= "table" then
+        return {}
+    end
+
+    return decoded
+end
+
+local function write_records(records)
+    pcall(vim.fn.mkdir, state_dir(), "p")
+
+    local ok_encode, encoded = pcall(vim.json.encode, records)
+    if not ok_encode then
+        return
+    end
+
+    pcall(vim.fn.writefile, { encoded }, state_file())
+end
+
+local function record_instance(root, pid, lsp_port, dap_port)
+    local records = read_records()
+
+    records[path_key(root)] = {
+        root = normalize_path(root),
+        pid = tonumber(pid),
+        lsp_port = tonumber(lsp_port),
+        dap_port = tonumber(dap_port),
+        godot_path = config.godot_path,
+        updated_at = os.time(),
+    }
+
+    write_records(records)
+end
+
+local function forget_instance(root)
+    local key = path_key(root)
+    if not key then
+        return
+    end
+
+    local records = read_records()
+    if records[key] == nil then
+        return
+    end
+
+    records[key] = nil
+    write_records(records)
+end
+
+local function pid_alive(pid)
+    pid = tonumber(pid)
+    if not pid or pid <= 0 then
+        return false
+    end
+
+    -- uv.kill(pid, 0) 在 Windows 上就是一次 OpenProcess 存活检查。
+    local ok, result = pcall(uv.kill, pid, 0)
+    return ok and result ~= nil
+end
+
+-- 同步 TCP 探测。本机端口被拒绝是即时的（实测 < 1ms），所以可以直接
+-- 放在启动路径上，不需要异步等待。
+local function tcp_reachable(port)
+    port = tonumber(port)
+    if not port then
+        return false
+    end
+
+    local ok, channel = pcall(vim.fn.sockconnect, "tcp", string.format("%s:%d", HOST, port), { rpc = false })
+    if not ok or type(channel) ~= "number" or channel <= 0 then
+        return false
+    end
+
+    pcall(vim.fn.chanclose, channel)
+    return true
+end
+
+local function normalize_match(text)
+    return (tostring(text):lower():gsub("[^%w]", ""))
+end
+
+local function project_name_for_root(root)
+    local project_file = vim.fs.joinpath(root, "project.godot")
+
+    if vim.fn.filereadable(project_file) == 1 then
+        local ok, lines = pcall(vim.fn.readfile, project_file)
+        if ok and type(lines) == "table" then
+            for _, line in ipairs(lines) do
+                local name = line:match('^%s*config/name%s*=%s*"(.*)"%s*$')
+                if name and name ~= "" then
+                    return name
+                end
+            end
+        end
+    end
+
+    return vim.fs.basename(root)
+end
+
+----------------------------------------------------------------------------
+-- 窗口标题
+--
+-- 用来确认“某个正在跑的 Godot 编辑器窗口属于当前项目”。Godot 4 的编辑器
+-- 标题形如：
+--     loot_container.tscn - 3D- RPG - Godot Engine
+-- 因此标题里含有 project.godot 的 config/name。
+----------------------------------------------------------------------------
+
+local window_title_api_state = {
+    initialized = false,
+    ffi = nil,
+    user32 = nil,
+}
+
+local function window_title_api()
+    if not IS_WINDOWS then
+        return nil, nil
+    end
+
+    if window_title_api_state.initialized then
+        return window_title_api_state.ffi, window_title_api_state.user32
+    end
+
+    window_title_api_state.initialized = true
+
+    local ok_ffi, ffi = pcall(require, "ffi")
+    if not ok_ffi then
+        return nil, nil
+    end
+
+    -- pcall：FFI 的 C 声明是进程级的，配置重载时会重复声明。
+    pcall(ffi.cdef, [[
+        int EnumWindows(int (*lpEnumFunc)(void*, intptr_t), intptr_t lParam);
+        int GetWindowTextLengthW(void* hWnd);
+        int GetWindowTextW(void* hWnd, unsigned short* lpString, int nMaxCount);
+    ]])
+
+    local ok_user32, user32 = pcall(ffi.load, "user32")
+    if not ok_user32 then
+        return nil, nil
+    end
+
+    window_title_api_state.ffi = ffi
+    window_title_api_state.user32 = user32
+    return ffi, user32
+end
+
+-- 所有顶层窗口标题的“归一化”形式：小写、只保留 ASCII 字母数字。
+-- 这样 "3D- RPG" 和目录名 "3d--rpg" 都能匹配上。
+local function normalized_window_titles()
+    local ffi, user32 = window_title_api()
+    if not ffi or not user32 then
+        return nil
+    end
+
+    local titles = {}
+
+    local callback = ffi.cast("int (*)(void*, intptr_t)", function(hwnd)
+        local length = user32.GetWindowTextLengthW(hwnd)
+
+        if length > 0 then
+            local buffer = ffi.new("unsigned short[?]", length + 1)
+            local copied = user32.GetWindowTextW(hwnd, buffer, length + 1)
+
+            if copied > 0 then
+                local chars = {}
+                for index = 0, copied - 1 do
+                    local code = buffer[index]
+                    local is_digit = code >= 48 and code <= 57
+                    local is_upper = code >= 65 and code <= 90
+                    local is_lower = code >= 97 and code <= 122
+
+                    if is_digit or is_upper or is_lower then
+                        chars[#chars + 1] = string.char(is_upper and code + 32 or code)
+                    end
+                end
+                titles[#titles + 1] = table.concat(chars)
+            end
+        end
+
+        return 1
+    end)
+
+    local ok = pcall(user32.EnumWindows, callback, 0)
+    if not ok then
+        return nil
+    end
+
+    return titles
+end
+
+local function external_editor_serves_project(root)
+    local wanted = normalize_match(project_name_for_root(root))
+
+    -- 项目名太短（或不是 ASCII）时无法可靠校验，宁可退回托管启动。
+    if #wanted < 3 then
+        return false
+    end
+
+    local titles = normalized_window_titles()
+    if not titles then
+        return false
+    end
+
+    for _, title in ipairs(titles) do
+        -- 同时要求出现项目名和 "godot"：Godot 编辑器标题是
+        -- "<scene> - <项目名> - Godot Engine"，而某个终端的标题可能只是
+        -- 恰好包含项目目录名，那种情况不算数。
+        if title:find(wanted, 1, true) and title:find("godot", 1, true) then
+            return true
+        end
+    end
+
+    return false
+end
+
+----------------------------------------------------------------------------
+-- 复用探测
+----------------------------------------------------------------------------
+
+local function adopt_instance(instance)
+    -- 换到别的端口对时，把原来预留的那一对还回去。
+    if state.port_lock_server and state.lsp_port ~= instance.lsp_port then
+        release_server(state.port_lock_server)
+        state.port_lock_server = nil
+    end
+
+    state.adopted = {
+        source = instance.source,
+        pid = instance.pid,
+    }
+    state.lsp_port = instance.lsp_port
+    state.dap_port = instance.dap_port
+end
+
+local function release_adopted()
+    if state.port_lock_server then
+        release_server(state.port_lock_server)
+    end
+
+    state.adopted = nil
+    state.lsp_port = nil
+    state.dap_port = nil
+    state.port_lock_server = nil
+end
+
+-- 返回 nil（没有可复用的）或 { source, lsp_port, dap_port, pid }
+local function probe_reusable_instance(root)
+    if not config.reuse then
+        return nil
+    end
+
+    -- 1) 之前（可能是上一个 Nvim）托管启动、并且还活着的实例
+    local record = read_records()[path_key(root)]
+    if record then
+        local lsp_port = tonumber(record.lsp_port)
+        local dap_port = tonumber(record.dap_port)
+
+        if lsp_port and dap_port and pid_alive(record.pid) and tcp_reachable(lsp_port) then
+            return {
+                source = "managed",
+                lsp_port = lsp_port,
+                dap_port = dap_port,
+                pid = tonumber(record.pid),
+            }
+        end
+
+        forget_instance(root)
+    end
+
+    -- 2) 外部编辑器（你自己开的那个 Godot）
+    if config.reuse_external then
+        local offset = tonumber(config.reuse_external_dap_offset) or 1
+
+        for _, port in ipairs(config.reuse_external_ports) do
+            port = tonumber(port)
+
+            if port and tcp_reachable(port) then
+                if not config.reuse_external_verify or external_editor_serves_project(root) then
+                    return {
+                        source = "external",
+                        lsp_port = port,
+                        dap_port = port + offset,
+                        pid = nil,
+                    }
+                end
+            end
+        end
+    end
+
+    return nil
+end
+
 local function project_root_for_file(filename)
     if not filename or filename == "" then
         return nil
@@ -225,7 +576,8 @@ local function can_listen(port)
 end
 
 local function ensure_port_pair()
-    if state.lsp_port and state.dap_port and state.port_lock_server then
+    -- 复用来的端口对没有 lock server，用 state.adopted 标记。
+    if state.lsp_port and state.dap_port and (state.port_lock_server or state.adopted) then
         return
     end
 
@@ -343,6 +695,43 @@ local function process_running(process)
 
     local ok, closing = pcall(process.is_closing, process)
     return ok and not closing
+end
+
+-- 当前项目“托管的”Godot 的 pid。
+-- 复用外部编辑器（你自己开的那个）时返回 nil —— 那个进程不归我们管。
+local function managed_pid()
+    if process_running(state.godot_process) then
+        return tonumber(state.godot_process_pid)
+    end
+
+    if state.adopted and state.adopted.source == "managed" then
+        local pid = tonumber(state.adopted.pid)
+        if pid_alive(pid) then
+            return pid
+        end
+    end
+
+    return nil
+end
+
+local function managed_alive()
+    return managed_pid() ~= nil
+end
+
+local function instance_source_label()
+    if state.adopted then
+        if state.adopted.source == "external" then
+            return "external editor (reused)"
+        end
+
+        return string.format("managed (reused, pid %s)", tostring(state.adopted.pid or "?"))
+    end
+
+    if process_running(state.godot_process) then
+        return "managed (launched by this Nvim)"
+    end
+
+    return "-"
 end
 
 local windows_focus_api_state = {
@@ -495,8 +884,8 @@ local function restore_foreground_window(focus, foreground)
     return ok_retry and retry_result ~= 0
 end
 
-local function guard_focus_after_godot_launch(focus, process)
-    if not focus or not process or not process.pid then
+local function guard_focus_after_godot_launch(focus, process, pid)
+    if not focus or not process or not pid then
         return
     end
 
@@ -507,7 +896,7 @@ local function guard_focus_after_godot_launch(focus, process)
     end
 
     local deadline = now_ms() + timeout_ms
-    local godot_pid = tonumber(process.pid)
+    local godot_pid = tonumber(pid)
 
     local function check()
         if state.godot_process ~= process or not process_running(process) then
@@ -547,7 +936,7 @@ local function guard_focus_after_godot_launch(focus, process)
     vim.schedule(check)
 end
 
-local function wait_for_process_exit(process, timeout_ms, generation, callback)
+local function wait_for_pid_exit(pid, timeout_ms, generation, callback)
     local deadline = now_ms() + timeout_ms
 
     local function check()
@@ -555,7 +944,7 @@ local function wait_for_process_exit(process, timeout_ms, generation, callback)
             return
         end
 
-        if not process_running(process) then
+        if not pid_alive(pid) then
             callback(true)
             return
         end
@@ -640,8 +1029,8 @@ local function close_helper_path()
     return vim.fs.joinpath(vim.fn.stdpath("config"), "lua", "tools", "godot-close.ps1")
 end
 
-local function request_normal_close(process, callback)
-    if not process_running(process) then
+local function request_normal_close(pid, callback)
+    if not pid_alive(pid) then
         callback(true)
         return
     end
@@ -667,12 +1056,12 @@ local function request_normal_close(process, callback)
         "-File",
         helper,
         "-ProcessId",
-        tostring(process.pid),
+        tostring(pid),
     }, {
         text = true,
     }, function(result)
         vim.schedule(function()
-            if not process_running(process) then
+            if not pid_alive(pid) then
                 callback(true)
                 return
             end
@@ -692,38 +1081,49 @@ local function request_normal_close(process, callback)
     end
 end
 
-local function force_kill_process(process)
-    if not process_running(process) then
+local function force_kill_pid(pid)
+    if not pid_alive(pid) then
         return
     end
 
-    pcall(process.kill, process, "sigterm")
+    pcall(uv.kill, pid, "sigterm")
 end
 
 local function close_managed_godot(opts, callback)
     opts = opts or {}
 
-    local process = state.godot_process
-    if not process_running(process) then
+    -- opts.pid 用于“关掉切换之前的那个实例”，此时 state 里已经是新实例了。
+    local pid = tonumber(opts.pid) or managed_pid()
+    if not pid then
         state.godot_process = nil
+        state.godot_process_pid = nil
         callback(true)
         return
     end
 
     local generation = state.generation
 
+    local function finish()
+        if process_running(state.godot_process) and tonumber(state.godot_process_pid) == pid then
+            state.godot_process = nil
+            state.godot_process_pid = nil
+        end
+
+        if state.adopted and state.adopted.source == "managed" and tonumber(state.adopted.pid) == pid then
+            state.adopted = nil
+        end
+    end
+
     if opts.force then
-        force_kill_process(process)
-        wait_for_process_exit(process, config.force_close_timeout_ms, generation, function(exited)
-            if not exited and process_running(process) then
-                pcall(process.kill, process, "sigkill")
+        force_kill_pid(pid)
+        wait_for_pid_exit(pid, config.force_close_timeout_ms, generation, function(exited)
+            if not exited and pid_alive(pid) then
+                pcall(uv.kill, pid, "sigkill")
             end
 
-            wait_for_process_exit(process, config.force_close_timeout_ms, generation, function(exited_after_kill)
+            wait_for_pid_exit(pid, config.force_close_timeout_ms, generation, function(exited_after_kill)
                 if exited_after_kill then
-                    if state.godot_process == process then
-                        state.godot_process = nil
-                    end
+                    finish()
                     callback(true)
                 else
                     callback(false, "Godot process did not exit after force close")
@@ -733,17 +1133,15 @@ local function close_managed_godot(opts, callback)
         return
     end
 
-    request_normal_close(process, function(close_requested, err)
+    request_normal_close(pid, function(close_requested, err)
         if not close_requested then
             callback(false, err)
             return
         end
 
-        wait_for_process_exit(process, config.close_timeout_ms, generation, function(exited)
+        wait_for_pid_exit(pid, config.close_timeout_ms, generation, function(exited)
             if exited then
-                if state.godot_process == process then
-                    state.godot_process = nil
-                end
+                finish()
                 callback(true)
                 return
             end
@@ -753,6 +1151,55 @@ local function close_managed_godot(opts, callback)
     end)
 end
 
+-- 用 uv.spawn 而不是 vim.system 启动 Godot，原因有两个：
+--
+--   1. vim.system 硬编码了 hide = true，libuv 会据此设置
+--      STARTF_USESHOWWINDOW + SW_HIDE。结果是 Godot 的编辑器窗口以隐藏状态
+--      创建：你看不到它，而且它没有 MainWindowHandle，于是
+--      lua/tools/godot-close.ps1（:GodotStop / :GodotRestart 的优雅关闭）
+--      会报 "has no main window handle" 直接失败。
+--   2. vim.system 不暴露 process handle，没法 unref。
+--
+-- stdio = { nil, nil, nil } 在 luv 里是 UV_IGNORE，Godot 的输出不会写进
+-- Nvim 的终端。
+local function spawn_godot(root, lsp_port, dap_port, on_exit)
+    local handle, pid_or_error = uv.spawn(config.godot_path, {
+        args = {
+            "--editor",
+            "--path",
+            root,
+            "--lsp-port",
+            tostring(lsp_port),
+            "--dap-port",
+            tostring(dap_port),
+        },
+        cwd = root,
+        stdio = { nil, nil, nil },
+        -- keep_alive：让 Godot 活过 Nvim。
+        --
+        -- detached = false 时 libuv 会把子进程放进 job object，父进程一退出
+        -- 就把它杀掉，于是每次启动 Nvim 都要重新冷启动一个编辑器。
+        detached = config.keep_alive == true,
+        -- 这里绝对不要加 hide，理由见上面第 1 条。
+    }, function(code)
+        on_exit(code)
+    end)
+
+    if not handle then
+        return nil, tostring(pid_or_error)
+    end
+
+    if config.keep_alive == true then
+        -- libuv 文档：detached 的子进程仍然会让父进程的事件循环保持存活，
+        -- 除非父进程对它的 process handle 调用 unref。
+        pcall(function()
+            handle:unref()
+        end)
+    end
+
+    return handle, tonumber(pid_or_error)
+end
+
 local function start_godot(root, generation, callback)
     local project_file = vim.fs.joinpath(root, "project.godot")
     if vim.fn.filereadable(project_file) ~= 1 then
@@ -760,48 +1207,45 @@ local function start_godot(root, generation, callback)
         return
     end
 
-    local cmd = {
-        config.godot_path,
-        "--editor",
-        "--path",
-        root,
-        "--lsp-port",
-        tostring(state.lsp_port),
-        "--dap-port",
-        tostring(state.dap_port),
-    }
+    -- 固定住这一代实例的端口：启动过程中 state 里的端口不应该再变。
+    local lsp_port = state.lsp_port
+    local dap_port = state.dap_port
 
     local foreground_before_launch = capture_foreground_window()
 
     local process
-    local ok, system_or_error = pcall(function()
-        process = vim.system(cmd, {
-            cwd = root,
-            stdout = false,
-            stderr = false,
-            detach = false,
-        }, function(result)
-            vim.schedule(function()
-                if state.godot_process == process then
-                    state.godot_process = nil
-                    disable_lsp()
-                    if result.code ~= 0 then
-                        notify("Managed Godot exited with code " .. tostring(result.code), vim.log.levels.WARN)
-                    end
-                end
-            end)
-        end)
-    end)
 
-    if not ok or not process then
-        callback(false, tostring(system_or_error), "launch")
+    local function on_exit(code)
+        vim.schedule(function()
+            if state.godot_process ~= process then
+                return
+            end
+
+            state.godot_process = nil
+            state.godot_process_pid = nil
+            forget_instance(root)
+            disable_lsp()
+
+            if code ~= nil and code ~= 0 then
+                notify("Managed Godot exited with code " .. tostring(code), vim.log.levels.WARN)
+            end
+        end)
+    end
+
+    local godot_pid
+    process, godot_pid = spawn_godot(root, lsp_port, dap_port, on_exit)
+
+    if not process then
+        callback(false, tostring(godot_pid), "launch")
         return
     end
 
     state.godot_process = process
-    guard_focus_after_godot_launch(foreground_before_launch, process)
+    state.godot_process_pid = godot_pid
 
-    wait_for_port(state.lsp_port, true, config.startup_timeout_ms, generation, function(ready)
+    guard_focus_after_godot_launch(foreground_before_launch, process, godot_pid)
+
+    wait_for_port(lsp_port, true, config.startup_timeout_ms, generation, function(ready)
         if generation ~= state.generation then
             return
         end
@@ -809,9 +1253,14 @@ local function start_godot(root, generation, callback)
         if not ready then
             callback(false, string.format(
                 "Godot started, but LSP port %d did not become ready. The project remains owned by this Nvim; fix Godot's TCP LSP setting and run :GodotRestart.",
-                state.lsp_port
+                lsp_port
             ), "lsp_timeout")
             return
+        end
+
+        -- 记下来，好让下一个 Nvim（或者 Nvim 重开之后）直接复用。
+        if process_running(process) and godot_pid then
+            record_instance(root, godot_pid, lsp_port, dap_port)
         end
 
         enable_lsp()
@@ -850,6 +1299,7 @@ local function cleanup_active_project()
 
     state.active_root = nil
     state.project_server = nil
+    state.adopted = nil
 end
 
 local function finish_transition()
@@ -927,41 +1377,124 @@ function M.activate(root, opts)
         return
     end
 
-    if not ensure_plugin_ready(opts) or not transition_guard(opts) then
+    if not transition_guard(opts) then
         return
     end
 
+    ------------------------------------------------------------
+    -- 复用优先
+    --
+    -- 有已经在跑的 Godot（上一个 Nvim 托管启动并保活的，或者你自己开的那
+    -- 个）就直接挂上去，省掉整个编辑器冷启动。
+    --
+    -- 必须发生在 ensure_plugin_ready() 之前：godotdev 的 setup 会读取
+    -- state.lsp_port / state.dap_port，复用时要让它拿到复用实例的端口。
+    ------------------------------------------------------------
+
+    local previous_pid = managed_pid()
+    local instance = probe_reusable_instance(root)
+
+    -- 已经是当前项目、端口没变、实例也还在 —— 什么都不用做。
+    if
+        instance
+        and same_path(root, state.active_root)
+        and state.lsp_port == instance.lsp_port
+        and (managed_alive() or instance.source == "external")
+    then
+        notify_unless_silent(opts, "Already active:\n" .. root)
+        return
+    end
+
+    if instance then
+        adopt_instance(instance)
+    end
+
+    if not ensure_plugin_ready(opts) then
+        if instance then
+            release_adopted()
+        end
+        return
+    end
+
+    -- 复用时这里直接返回，不会分配新的端口对。
     ensure_port_pair()
 
-    if same_path(root, state.active_root) then
-        if process_running(state.godot_process) then
-            notify_unless_silent(opts, "Already active:\n" .. root)
-            return
-        end
+    local function notify_active(verb)
+        notify_unless_silent(opts, string.format(
+            "Godot %s:\n%s\nLSP :%d  DAP :%d\nInstance: %s",
+            verb,
+            root,
+            state.lsp_port,
+            state.dap_port,
+            instance_source_label()
+        ))
+    end
 
+    -- 要复用的实例不是“切换前正在用的那个托管实例”时，先把旧的关掉，
+    -- 免得留下一堆孤儿编辑器。注意外部编辑器（你自己开的）不归我们管。
+    local target_pid = instance and tonumber(instance.pid) or nil
+    local must_close_previous = previous_pid ~= nil and previous_pid ~= target_pid
+
+    if same_path(root, state.active_root) then
         state.transitioning = true
         state.generation = state.generation + 1
         local generation = state.generation
 
-        disable_lsp()
-        start_godot(root, generation, function(ok, err, failure_kind)
-            if failure_kind == "launch" then
-                cleanup_active_project()
-            end
-            finish_transition()
+        local function start_again()
+            disable_lsp()
+            stop_dap_session()
 
-            if not ok then
-                notify_unless_silent(opts, err, vim.log.levels.ERROR)
+            if instance then
+                patch_lsp()
+                patch_dap()
+                enable_lsp()
+                finish_transition()
+                notify_active("reused")
                 return
             end
 
-            notify_unless_silent(opts, string.format(
-                "Godot active:\n%s\nLSP :%d  DAP :%d",
-                root,
-                state.lsp_port,
-                state.dap_port
-            ))
-        end)
+            -- 要托管启动一个新实例：不能沿用复用实例的端口，重新分配一对。
+            if state.adopted then
+                release_adopted()
+            end
+            ensure_port_pair()
+
+            patch_lsp()
+            patch_dap()
+
+            start_godot(root, generation, function(ok, err, failure_kind)
+                if failure_kind == "launch" then
+                    cleanup_active_project()
+                end
+                finish_transition()
+
+                if not ok then
+                    notify_unless_silent(opts, err, vim.log.levels.ERROR)
+                    return
+                end
+
+                notify_active("active")
+            end)
+        end
+
+        if must_close_previous then
+            close_managed_godot({ force = opts.force == true, pid = previous_pid }, function(closed, err)
+                if generation ~= state.generation then
+                    return
+                end
+
+                if not closed then
+                    finish_transition()
+                    notify_unless_silent(opts, err or "Godot restart cancelled", vim.log.levels.WARN)
+                    return
+                end
+
+                start_again()
+            end)
+            return
+        end
+
+        start_again()
         return
     end
 
@@ -969,6 +1502,9 @@ function M.activate(root, opts)
     if not target_server then
         -- This is the expected failure for auto-bind when another Nvim already
         -- owns the project, so silent auto-bind produces no warning popup.
+        if instance then
+            release_adopted()
+        end
         notify_unless_silent(opts, acquire_error, vim.log.levels.WARN)
         return
     end
@@ -976,7 +1512,6 @@ function M.activate(root, opts)
     state.transitioning = true
     state.generation = state.generation + 1
     local generation = state.generation
-    local old_root = state.active_root
     local old_server = state.project_server
 
     local function abort_switch(message)
@@ -1001,6 +1536,22 @@ function M.activate(root, opts)
 
         state.active_root = root
         state.project_server = target_server
+
+        if instance then
+            patch_lsp()
+            patch_dap()
+            enable_lsp()
+            finish_transition()
+            notify_active("reused")
+            return
+        end
+
+        -- 要托管启动一个新实例：不能沿用复用实例的端口，重新分配一对。
+        if state.adopted then
+            release_adopted()
+        end
+        ensure_port_pair()
+
         patch_lsp()
         patch_dap()
 
@@ -1018,17 +1569,12 @@ function M.activate(root, opts)
                 return
             end
 
-            notify_unless_silent(opts, string.format(
-                "Godot active:\n%s\nLSP :%d  DAP :%d",
-                root,
-                state.lsp_port,
-                state.dap_port
-            ))
+            notify_active("active")
         end)
     end
 
-    if old_root and process_running(state.godot_process) then
-        close_managed_godot({ force = opts.force == true }, function(closed, err)
+    if must_close_previous then
+        close_managed_godot({ force = opts.force == true, pid = previous_pid }, function(closed, err)
             if generation ~= state.generation then
                 release_server(target_server)
                 return
@@ -1129,9 +1675,18 @@ function M.restart(opts)
     local generation = state.generation
     local root = state.active_root
 
+    local external = state.adopted ~= nil and state.adopted.source == "external"
+
     local function start_again()
         disable_lsp()
         stop_dap_session()
+
+        -- 新实例要用新的端口对，复用的那一对还回去。
+        if state.adopted then
+            release_adopted()
+        end
+        ensure_port_pair()
+
         patch_lsp()
         patch_dap()
 
@@ -1147,15 +1702,17 @@ function M.restart(opts)
             end
 
             notify(string.format(
-                "Godot restarted:\n%s\nLSP :%d  DAP :%d",
+                "Godot restarted:\n%s\nLSP :%d  DAP :%d\nInstance: %s%s",
                 root,
                 state.lsp_port,
-                state.dap_port
+                state.dap_port,
+                instance_source_label(),
+                external and "\n(你手动开的那个 Godot 编辑器仍然在运行)" or ""
             ))
         end)
     end
 
-    if process_running(state.godot_process) then
+    if managed_alive() then
         close_managed_godot({ force = opts.force == true }, function(closed, err)
             if generation ~= state.generation then
                 return
@@ -1193,12 +1750,23 @@ function M.stop(opts)
     local generation = state.generation
 
     local function finish_stop()
+        local was_external = state.adopted ~= nil and state.adopted.source == "external"
+        local stopped_root = state.active_root
+
         cleanup_active_project()
+
+        -- 外部编辑器不归我们管，记录也留着（下次还能复用）。
+        if stopped_root and not was_external then
+            forget_instance(stopped_root)
+        end
+
         finish_transition()
-        notify("Godot instance stopped")
+        notify(was_external
+            and "Detached from the external Godot editor (it keeps running)"
+            or "Godot instance stopped")
     end
 
-    if process_running(state.godot_process) then
+    if managed_alive() then
         close_managed_godot({ force = opts.force == true }, function(closed, err)
             if generation ~= state.generation then
                 return
@@ -1226,16 +1794,24 @@ function M.status()
     ensure_port_pair()
 
     local active_client = nil
-    for _, client in ipairs(vim.lsp.get_clients({ name = "godot_editor" })) do
-        if state.active_root and same_path(client.root_dir, state.active_root) then
-            active_client = client
-            break
+
+    -- godotdev 想把 client 命名成 "godot_editor"，但 patch_lsp() 里
+    -- vim.lsp.config("gdscript", ...) 之后实际注册的名字是 "gdscript"，
+    -- 所以两个都认（否则这里永远显示 false）。
+    for _, client in ipairs(vim.lsp.get_clients()) do
+        if client.name == "gdscript" or client.name == "godot_editor" then
+            if state.active_root and same_path(client.root_dir, state.active_root) then
+                active_client = client
+                break
+            end
         end
     end
 
-    local godot_pid = "-"
-    if process_running(state.godot_process) then
-        godot_pid = tostring(state.godot_process.pid)
+    local pid = managed_pid()
+    local godot_pid = pid and tostring(pid) or "-"
+
+    if not pid and state.adopted and state.adopted.source == "external" then
+        godot_pid = "external (not managed)"
     end
 
     local lines = {
@@ -1244,6 +1820,7 @@ function M.status()
         "",
         string.format("Project     : %s", state.active_root or "-"),
         string.format("Project RPC : %s", state.project_server or "-"),
+        string.format("Instance    : %s", instance_source_label()),
         string.format("Godot PID   : %s", godot_pid),
         "",
         string.format("Godot LSP   : %s:%d", HOST, state.lsp_port),
