@@ -22,7 +22,6 @@ local state = {
     lsp_port = nil,
     dap_port = nil,
     port_lock_server = nil,
-
     active_root = nil,
     project_server = nil,
 
@@ -32,6 +31,12 @@ local state = {
 
 local function notify(message, level)
     vim.notify(message, level or vim.log.levels.INFO, { title = "Godot Instance" })
+end
+
+local function notify_unless_silent(opts, message, level)
+    if not (opts and opts.silent) then
+        notify(message, level)
+    end
 end
 
 local function normalize_slashes(path)
@@ -82,6 +87,7 @@ local function server_key(address)
     if IS_WINDOWS then
         address = address:lower()
     end
+
     return address
 end
 
@@ -92,6 +98,7 @@ local function own_server_exists(address)
             return true, existing
         end
     end
+
     return false, nil
 end
 
@@ -127,7 +134,11 @@ local function project_root_for_file(filename)
         return nil
     end
 
-    local root = vim.fs.root(filename, "project.godot")
+    local ok, root = pcall(vim.fs.root, filename, "project.godot")
+    if not ok then
+        return nil
+    end
+
     return normalize_path(root)
 end
 
@@ -212,8 +223,8 @@ local function ensure_port_pair()
         local lsp_port = min_port + slot * 2
         local dap_port = lsp_port + 1
         local lock_address = port_lock_pipe(lsp_port, dap_port)
-
         local claimed, lock_or_error = claim_server(lock_address)
+
         if claimed then
             if can_listen(lsp_port) and can_listen(dap_port) then
                 state.lsp_port = lsp_port
@@ -243,10 +254,12 @@ local function port_is_open(port, callback)
     end
 
     local finished = false
+
     local function finish(open)
         if finished then
             return
         end
+
         finished = true
         close_handle(tcp)
         vim.schedule(function()
@@ -502,7 +515,7 @@ end
 local function start_godot(root, generation, callback)
     local project_file = vim.fs.joinpath(root, "project.godot")
     if vim.fn.filereadable(project_file) ~= 1 then
-        callback(false, "project.godot not found: " .. root)
+        callback(false, "project.godot not found: " .. root, "launch")
         return
     end
 
@@ -529,7 +542,6 @@ local function start_godot(root, generation, callback)
                 if state.godot_process == process then
                     state.godot_process = nil
                     disable_lsp()
-
                     if result.code ~= 0 then
                         notify("Managed Godot exited with code " .. tostring(result.code), vim.log.levels.WARN)
                     end
@@ -538,8 +550,8 @@ local function start_godot(root, generation, callback)
         end)
     end)
 
-    if not ok then
-        callback(false, tostring(system_or_error))
+    if not ok or not process then
+        callback(false, tostring(system_or_error), "launch")
         return
     end
 
@@ -554,7 +566,7 @@ local function start_godot(root, generation, callback)
             callback(false, string.format(
                 "Godot started, but LSP port %d did not become ready. The project remains owned by this Nvim; fix Godot's TCP LSP setting and run :GodotRestart.",
                 state.lsp_port
-            ))
+            ), "lsp_timeout")
             return
         end
 
@@ -563,7 +575,7 @@ local function start_godot(root, generation, callback)
     end)
 end
 
-local function ensure_plugin_ready()
+local function ensure_plugin_ready(opts)
     if state.plugin_ready then
         return true
     end
@@ -577,7 +589,7 @@ local function ensure_plugin_ready()
         return true
     end
 
-    notify(
+    notify_unless_silent(opts,
         "godotdev.nvim is not initialized. Ensure its Lazy spec calls godot_instance.godotdev_opts() before setup and godot_instance.after_godotdev_setup() after setup.",
         vim.log.levels.ERROR
     )
@@ -642,52 +654,64 @@ local function opened_projects()
     return result
 end
 
-local function transition_guard()
+local function transition_guard(opts)
     if state.transitioning then
-        notify("A Godot transition is already in progress", vim.log.levels.WARN)
+        notify_unless_silent(opts, "A Godot transition is already in progress", vim.log.levels.WARN)
         return false
     end
+
     return true
 end
 
 function M.activate(root, opts)
     opts = opts or {}
 
-    if not ensure_plugin_ready() or not transition_guard() then
+    -- Auto binding is intentionally one-shot. Once this Nvim owns a project,
+    -- entering buffers from another project never switches it automatically.
+    if opts.auto and state.active_root then
+        return
+    end
+
+    root = normalize_path(root)
+    if not root then
+        notify_unless_silent(opts, "Invalid Godot project root", vim.log.levels.ERROR)
+        return
+    end
+
+    if vim.fn.filereadable(vim.fs.joinpath(root, "project.godot")) ~= 1 then
+        notify_unless_silent(opts, "project.godot not found:\n" .. root, vim.log.levels.ERROR)
+        return
+    end
+
+    if not ensure_plugin_ready(opts) or not transition_guard(opts) then
         return
     end
 
     ensure_port_pair()
 
-    root = normalize_path(root)
-    if not root then
-        notify("Invalid Godot project root", vim.log.levels.ERROR)
-        return
-    end
-
-    if vim.fn.filereadable(vim.fs.joinpath(root, "project.godot")) ~= 1 then
-        notify("project.godot not found:\n" .. root, vim.log.levels.ERROR)
-        return
-    end
-
     if same_path(root, state.active_root) then
         if process_running(state.godot_process) then
-            notify("Already active:\n" .. root)
+            notify_unless_silent(opts, "Already active:\n" .. root)
             return
         end
 
         state.transitioning = true
         state.generation = state.generation + 1
         local generation = state.generation
+
         disable_lsp()
-        start_godot(root, generation, function(ok, err)
+        start_godot(root, generation, function(ok, err, failure_kind)
+            if failure_kind == "launch" then
+                cleanup_active_project()
+            end
             finish_transition()
+
             if not ok then
-                notify(err, vim.log.levels.ERROR)
+                notify_unless_silent(opts, err, vim.log.levels.ERROR)
                 return
             end
 
-            notify(string.format(
+            notify_unless_silent(opts, string.format(
                 "Godot active:\n%s\nLSP :%d  DAP :%d",
                 root,
                 state.lsp_port,
@@ -699,14 +723,15 @@ function M.activate(root, opts)
 
     local target_server, acquire_error = acquire_project(root)
     if not target_server then
-        notify(acquire_error, vim.log.levels.WARN)
+        -- This is the expected failure for auto-bind when another Nvim already
+        -- owns the project, so silent auto-bind produces no warning popup.
+        notify_unless_silent(opts, acquire_error, vim.log.levels.WARN)
         return
     end
 
     state.transitioning = true
     state.generation = state.generation + 1
     local generation = state.generation
-
     local old_root = state.active_root
     local old_server = state.project_server
 
@@ -714,7 +739,7 @@ function M.activate(root, opts)
         release_server(target_server)
         finish_transition()
         if message then
-            notify(message, vim.log.levels.WARN)
+            notify_unless_silent(opts, message, vim.log.levels.WARN)
         end
     end
 
@@ -726,7 +751,6 @@ function M.activate(root, opts)
 
         disable_lsp()
         stop_dap_session()
-
         if old_server then
             release_server(old_server)
         end
@@ -736,15 +760,21 @@ function M.activate(root, opts)
         patch_lsp()
         patch_dap()
 
-        start_godot(root, generation, function(ok, err)
+        start_godot(root, generation, function(ok, err, failure_kind)
+            if failure_kind == "launch" then
+                -- The process never started. Do not leave a stale project pipe
+                -- claiming ownership of a project with no managed Godot.
+                cleanup_active_project()
+            end
+
             finish_transition()
 
             if not ok then
-                notify(err, vim.log.levels.ERROR)
+                notify_unless_silent(opts, err, vim.log.levels.ERROR)
                 return
             end
 
-            notify(string.format(
+            notify_unless_silent(opts, string.format(
                 "Godot active:\n%s\nLSP :%d  DAP :%d",
                 root,
                 state.lsp_port,
@@ -771,6 +801,33 @@ function M.activate(root, opts)
     end
 
     commit_switch()
+end
+
+function M.auto_bind(bufnr)
+    if state.transitioning or state.active_root then
+        return
+    end
+
+    bufnr = bufnr or vim.api.nvim_get_current_buf()
+    if not vim.api.nvim_buf_is_valid(bufnr) then
+        return
+    end
+
+    local root = project_root_for_buf(bufnr)
+
+    -- Covers starting Nvim from a Godot project with an unnamed initial buffer.
+    if not root and vim.api.nvim_buf_get_name(bufnr) == "" then
+        root = project_root_for_file(vim.fn.getcwd())
+    end
+
+    if not root then
+        return
+    end
+
+    M.activate(root, {
+        auto = true,
+        silent = true,
+    })
 end
 
 function M.here(opts)
@@ -801,7 +858,7 @@ function M.project(opts)
     vim.ui.select(projects, {
         prompt = "Godot Project",
         format_item = function(root)
-            local marker = same_path(root, state.active_root) and "● " or "  "
+            local marker = same_path(root, state.active_root) and "* " or "  "
             return marker .. vim.fs.basename(root) .. "    " .. root
         end,
     }, function(choice)
@@ -834,8 +891,12 @@ function M.restart(opts)
         patch_lsp()
         patch_dap()
 
-        start_godot(root, generation, function(ok, err)
+        start_godot(root, generation, function(ok, err, failure_kind)
+            if failure_kind == "launch" then
+                cleanup_active_project()
+            end
             finish_transition()
+
             if not ok then
                 notify(err, vim.log.levels.ERROR)
                 return
@@ -933,14 +994,12 @@ function M.status()
         godot_pid = tostring(state.godot_process.pid)
     end
 
-    local project_pipe_value = state.project_server or "-"
-
     local lines = {
         string.format("Nvim PID    : %d", vim.fn.getpid()),
         string.format("Nvim server : %s", vim.v.servername ~= "" and vim.v.servername or "-"),
         "",
         string.format("Project     : %s", state.active_root or "-"),
-        string.format("Project RPC : %s", project_pipe_value),
+        string.format("Project RPC : %s", state.project_server or "-"),
         string.format("Godot PID   : %s", godot_pid),
         "",
         string.format("Godot LSP   : %s:%d", HOST, state.lsp_port),
@@ -963,8 +1022,6 @@ function M.godotdev_opts(opts)
     opts.editor_host = HOST
     opts.editor_port = state.lsp_port
     opts.debug_port = state.dap_port
-
-    -- We own the project-specific editor RPC pipe ourselves.
     opts.autostart_editor_server = false
 
     if opts.godot_path then
@@ -976,6 +1033,7 @@ end
 
 function M.after_godotdev_setup(opts)
     opts = opts or {}
+
     if opts.godot_path then
         config.godot_path = opts.godot_path
     end
@@ -983,19 +1041,64 @@ function M.after_godotdev_setup(opts)
     ensure_port_pair()
 
     -- godotdev.setup() enables gdscript immediately. Keep it disabled until
-    -- this Nvim has an active project and its Godot LSP port is listening.
+    -- this Nvim owns a project and its Godot LSP port is ready.
     disable_lsp()
     patch_lsp()
-
-    -- Work around godotdev.nvim@ccac07c passing host/port while dap.lua reads
-    -- editor_host/debug_port.
     patch_dap()
-
     state.plugin_ready = true
+end
+
+local function setup_remote_open()
+    _G.godot_remote_open = function(encoded_file, line, column)
+        if not vim.base64 or not vim.base64.decode then
+            error("vim.base64.decode is unavailable")
+        end
+
+        local ok_decode, file = pcall(vim.base64.decode, encoded_file)
+        if not ok_decode or not file or file == "" then
+            error("invalid Godot remote-open path")
+        end
+
+        local root = project_root_for_file(file)
+        if not state.active_root or not root or not same_path(root, state.active_root) then
+            error("Godot remote-open project does not match this Nvim")
+        end
+
+        line = tonumber(line) or 1
+        column = tonumber(column) or 1
+        line = math.max(math.floor(line), 1)
+        column = math.max(math.floor(column), 1)
+
+        vim.schedule(function()
+            -- Re-check after scheduling in case the active project changed.
+            local scheduled_root = project_root_for_file(file)
+            if not state.active_root or not scheduled_root or not same_path(scheduled_root, state.active_root) then
+                return
+            end
+
+            local ok_drop, err = pcall(vim.api.nvim_cmd, {
+                cmd = "drop",
+                args = { file },
+                magic = { file = false, bar = false },
+            }, {})
+
+            if not ok_drop then
+                notify("Godot remote open failed:\n" .. tostring(err), vim.log.levels.ERROR)
+                return
+            end
+
+            -- Preserve the old router's cursor() semantics: both values are
+            -- 1-based and Vim handles clamping for us.
+            pcall(vim.fn.cursor, line, column)
+        end)
+
+        return 1
+    end
 end
 
 local function create_command(name, callback, opts)
     opts = opts or {}
+
     if vim.fn.exists(":" .. name) == 2 then
         vim.api.nvim_del_user_command(name)
     end
@@ -1009,6 +1112,7 @@ function M.bootstrap(opts)
     end
 
     config = vim.tbl_deep_extend("force", config, opts or {})
+    setup_remote_open()
 
     create_command("GodotHere", function(command_opts)
         M.here({ force = command_opts.bang })
@@ -1044,12 +1148,38 @@ function M.bootstrap(opts)
         desc = "Show Godot instance status",
     })
 
+    local group = vim.api.nvim_create_augroup("godot_instance_manager", { clear = true })
+
+    -- Auto-bind only while this Nvim has no active Godot project. The actual
+    -- ownership claim is still the project-specific named pipe, so another
+    -- Nvim already owning the project makes this a silent no-op.
+    vim.api.nvim_create_autocmd("BufEnter", {
+        group = group,
+        callback = function(args)
+            vim.schedule(function()
+                if vim.api.nvim_buf_is_valid(args.buf) then
+                    M.auto_bind(args.buf)
+                end
+            end)
+        end,
+    })
+
+    -- If bootstrap happens after the initial BufEnter, or Nvim starts in a
+    -- Godot project with an unnamed buffer, this catches the initial project.
+    vim.api.nvim_create_autocmd("VimEnter", {
+        group = group,
+        once = true,
+        callback = function()
+            vim.schedule(function()
+                M.auto_bind(vim.api.nvim_get_current_buf())
+            end)
+        end,
+    })
+
     -- Never force-kill Godot during Nvim shutdown: that could discard unsaved
-    -- scene/resource changes. Named-pipe ownership disappears automatically
-    -- when this Nvim process exits, so routing fails closed instead of going to
-    -- another Nvim.
+    -- scene/resource changes. Pipe ownership disappears with the Nvim process.
     vim.api.nvim_create_autocmd("VimLeavePre", {
-        group = vim.api.nvim_create_augroup("godot_instance_manager", { clear = true }),
+        group = group,
         callback = function()
             disable_lsp()
             stop_dap_session()
@@ -1057,6 +1187,11 @@ function M.bootstrap(opts)
     })
 
     state.bootstrapped = true
+
+    -- Covers configurations where commands.lua is sourced after VimEnter.
+    vim.schedule(function()
+        M.auto_bind(vim.api.nvim_get_current_buf())
+    end)
 end
 
 return M
