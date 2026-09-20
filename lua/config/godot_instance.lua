@@ -12,6 +12,12 @@ local config = {
     force_close_timeout_ms = 5000,
     port_min = 16000,
     port_max = 49000,
+
+    -- Godot's editor window can steal the foreground window on Windows when it
+    -- is launched automatically. Keep the terminal/Nvim focused by default.
+    preserve_focus_on_start = true,
+    focus_guard_timeout_ms = 5000,
+    focus_guard_poll_ms = 40,
 }
 
 local state = {
@@ -317,6 +323,208 @@ local function process_running(process)
     return ok and not closing
 end
 
+local windows_focus_api_state = {
+    initialized = false,
+    ffi = nil,
+    user32 = nil,
+    kernel32 = nil,
+}
+
+local function windows_focus_api()
+    if not IS_WINDOWS then
+        return nil, nil
+    end
+
+    if windows_focus_api_state.initialized then
+        return windows_focus_api_state.ffi, windows_focus_api_state.user32, windows_focus_api_state.kernel32
+    end
+
+    windows_focus_api_state.initialized = true
+
+    local ok_ffi, ffi = pcall(require, "ffi")
+    if not ok_ffi then
+        return nil, nil
+    end
+
+    -- pcall keeps this safe across config reloads, because LuaJIT FFI C
+    -- declarations are global to the process and may already exist.
+    pcall(ffi.cdef, [[
+        void* GetForegroundWindow(void);
+        int SetForegroundWindow(void* hWnd);
+        int IsWindow(void* hWnd);
+        int BringWindowToTop(void* hWnd);
+        int AttachThreadInput(unsigned long idAttach, unsigned long idAttachTo, int fAttach);
+        unsigned long GetWindowThreadProcessId(void* hWnd, unsigned long* lpdwProcessId);
+        unsigned long GetCurrentThreadId(void);
+    ]])
+
+    local ok_user32, user32 = pcall(ffi.load, "user32")
+    local ok_kernel32, kernel32 = pcall(ffi.load, "kernel32")
+    if not ok_user32 or not ok_kernel32 then
+        return nil, nil, nil
+    end
+
+    local ok_probe = pcall(function()
+        return user32.GetForegroundWindow
+            and user32.SetForegroundWindow
+            and user32.IsWindow
+            and user32.BringWindowToTop
+            and user32.AttachThreadInput
+            and user32.GetWindowThreadProcessId
+            and kernel32.GetCurrentThreadId
+    end)
+    if not ok_probe then
+        return nil, nil, nil
+    end
+
+    windows_focus_api_state.ffi = ffi
+    windows_focus_api_state.user32 = user32
+    windows_focus_api_state.kernel32 = kernel32
+    return ffi, user32, kernel32
+end
+
+local function capture_foreground_window()
+    if not config.preserve_focus_on_start then
+        return nil
+    end
+
+    local ffi, user32, kernel32 = windows_focus_api()
+    if not ffi or not user32 or not kernel32 then
+        return nil
+    end
+
+    local ok, hwnd = pcall(user32.GetForegroundWindow)
+    if not ok or hwnd == nil or hwnd == ffi.NULL then
+        return nil
+    end
+
+    return {
+        ffi = ffi,
+        user32 = user32,
+        kernel32 = kernel32,
+        hwnd = hwnd,
+    }
+end
+
+local function foreground_process_id(focus, hwnd)
+    local pid = focus.ffi.new("unsigned long[1]")
+    local ok, thread_id = pcall(focus.user32.GetWindowThreadProcessId, hwnd, pid)
+    if not ok or thread_id == 0 then
+        return nil
+    end
+
+    return tonumber(pid[0])
+end
+
+local function restore_foreground_window(focus, foreground)
+    local ok_window, is_window = pcall(focus.user32.IsWindow, focus.hwnd)
+    if not ok_window or is_window == 0 then
+        return false
+    end
+
+    local ok_set, set_result = pcall(focus.user32.SetForegroundWindow, focus.hwnd)
+    if ok_set and set_result ~= 0 then
+        return true
+    end
+
+    -- Windows can reject SetForegroundWindow because of its foreground-lock
+    -- rules. Temporarily attach Nvim's input thread to the current foreground
+    -- thread and the terminal window thread, retry, then immediately detach.
+    local ok_current, current_thread = pcall(focus.kernel32.GetCurrentThreadId)
+    if not ok_current or current_thread == 0 then
+        return false
+    end
+
+    local foreground_thread = nil
+    if foreground and foreground ~= focus.ffi.NULL then
+        local ok_fg, thread_id = pcall(focus.user32.GetWindowThreadProcessId, foreground, nil)
+        if ok_fg and thread_id ~= 0 then
+            foreground_thread = thread_id
+        end
+    end
+
+    local ok_target, target_thread = pcall(focus.user32.GetWindowThreadProcessId, focus.hwnd, nil)
+    if not ok_target or target_thread == 0 then
+        return false
+    end
+
+    local attached = {}
+    local function attach(thread_id)
+        if not thread_id or thread_id == 0 or thread_id == current_thread then
+            return
+        end
+
+        local ok_attach, attached_ok = pcall(focus.user32.AttachThreadInput, current_thread, thread_id, 1)
+        if ok_attach and attached_ok ~= 0 then
+            table.insert(attached, thread_id)
+        end
+    end
+
+    attach(foreground_thread)
+    attach(target_thread)
+
+    pcall(focus.user32.BringWindowToTop, focus.hwnd)
+    local ok_retry, retry_result = pcall(focus.user32.SetForegroundWindow, focus.hwnd)
+
+    for index = #attached, 1, -1 do
+        pcall(focus.user32.AttachThreadInput, current_thread, attached[index], 0)
+    end
+
+    return ok_retry and retry_result ~= 0
+end
+
+local function guard_focus_after_godot_launch(focus, process)
+    if not focus or not process or not process.pid then
+        return
+    end
+
+    local timeout_ms = math.max(tonumber(config.focus_guard_timeout_ms) or 0, 0)
+    local poll_ms = math.max(tonumber(config.focus_guard_poll_ms) or 40, 10)
+    if timeout_ms == 0 then
+        return
+    end
+
+    local deadline = now_ms() + timeout_ms
+    local godot_pid = tonumber(process.pid)
+
+    local function check()
+        if state.godot_process ~= process or not process_running(process) then
+            return
+        end
+
+        if now_ms() >= deadline then
+            return
+        end
+
+        local ok, foreground = pcall(focus.user32.GetForegroundWindow)
+        if not ok or foreground == nil or foreground == focus.ffi.NULL then
+            vim.defer_fn(check, poll_ms)
+            return
+        end
+
+        -- As long as Nvim's terminal is still in front, keep watching for the
+        -- Godot editor's first activation.
+        if foreground == focus.hwnd then
+            vim.defer_fn(check, poll_ms)
+            return
+        end
+
+        local foreground_pid = foreground_process_id(focus, foreground)
+        if foreground_pid == godot_pid then
+            -- Godot itself took focus. Restore the exact window that was in
+            -- front before launch, then stop watching so later intentional
+            -- Alt-Tab/mouse/GlazeWM focus changes are never fought.
+            restore_foreground_window(focus, foreground)
+            return
+        end
+
+        -- Some other window became foreground first. Treat that as an
+        -- intentional user/window-manager focus change and do not interfere.
+    end
+
+    vim.schedule(check)
+end
+
 local function wait_for_process_exit(process, timeout_ms, generation, callback)
     local deadline = now_ms() + timeout_ms
 
@@ -530,6 +738,8 @@ local function start_godot(root, generation, callback)
         tostring(state.dap_port),
     }
 
+    local foreground_before_launch = capture_foreground_window()
+
     local process
     local ok, system_or_error = pcall(function()
         process = vim.system(cmd, {
@@ -556,6 +766,7 @@ local function start_godot(root, generation, callback)
     end
 
     state.godot_process = process
+    guard_focus_after_godot_launch(foreground_before_launch, process)
 
     wait_for_port(state.lsp_port, true, config.startup_timeout_ms, generation, function(ready)
         if generation ~= state.generation then
