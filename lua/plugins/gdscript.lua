@@ -16,6 +16,7 @@ return {
     -- Godot 实例管理器（Nvim 多开 + Godot 多开）
     ------------------------------------------------------------
     {
+		-- "Evtr0na/godot-instance.nvim"
         dir = "D:/2zhuomian/app/source/godot-instance.nvim",
 
         -- 启动时就加载：VimEnter 的自动绑定必须在启动阶段注册好。
