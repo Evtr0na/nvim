@@ -9,7 +9,7 @@ return {
 			{
 				"s",
 				function()
-    require("config.flash_jump").jump()
+    require("util.flash_jump").jump()
 				end,
 				mode = { "n", "v" },
 				desc = "Flash Jump",

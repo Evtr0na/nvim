@@ -6,7 +6,7 @@ return {
     {
       "<leader>m",
       function()
-        require("config.mc_mode").enter()
+        require("util.mc_mode").enter()
       end,
       desc = "Enter MC select mode",
     },
@@ -18,7 +18,7 @@ config = function()
   mc.setup()
 
   vim.keymap.set("n", "<Esc>", function()
-    local mode = require("config.mc_mode")
+    local mode = require("util.mc_mode")
 
     if mode.active then
       -- MC SELECT:

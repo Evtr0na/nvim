@@ -1,13 +1,21 @@
 # ts/ —— Treesitter parser 与 queries
 
-这个目录是 Neovim 的 runtimepath 的一部分（由 `init.lua` 里的
-`performance.rtp.paths` 挂上，见 `lua/config/treesitter_path.lua`）。
+这个目录是 Neovim 的 runtimepath 的一部分（由 `lua/config/lazy.lua` 里的
+`performance.rtp.paths` 挂上）。
 目录布局就是 Neovim 的标准布局：
 
 ```
-ts/parser/<lang>.so
-ts/queries/<lang>/highlights.scm     # 以及 folds / indents / injections / locals
+ts/
+├── parser/
+│   ├── README.md           编译产物的说明；换机器要重编（平台相关）
+│   └── glsl.so             ← 二进制，898 KB
+└── queries/
+    ├── README.md           查询规则的说明；纯文本，跨平台通用
+    ├── glsl/               5 个 .scm，当前实际使用
+    └── c/                  glsl 的规则靠它（`; inherits: c`）
 ```
+
+两个子目录各自有 README，分别讲编译和查询规则。本文件讲整体取舍。
 
 ## 为什么不用 nvim-treesitter 默认的安装目录
 
