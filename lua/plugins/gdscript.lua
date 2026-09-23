@@ -25,6 +25,19 @@ return {
 
         opts = {
             godot_path = GODOT_PATH,
+
+            ------------------------------------------------------------
+            -- 调试日志：Godot 编辑器里按 F5/F6 的报错
+            ------------------------------------------------------------
+            -- 编辑器启动的游戏，stdout 被编辑器吞掉，Nvim 看不到。Godot 桌面
+            -- 平台默认会把游戏输出写进 user://logs/godot.log，插件 tail 它，
+            -- 并把报错解析成真正的 vim.diagnostic —— 于是 Trouble / 跳转 /
+            -- 行号符号全都直接可用。实现见 godot-instance/debuglog.lua。
+            debuglog = {
+                -- 插件默认不占键位，这里显式指定（和下面的 <leader>g* 一套）
+                keymap = "<leader>gD",        -- 开关调试日志面板
+                -- keymap_errors = "<leader>gQ", -- 报错列表（Trouble 优先，quickfix 兜底）
+            },
         },
 
         config = function(_, opts)
@@ -71,6 +84,25 @@ return {
                     size = 0.35,
                 },
             },
+
+            -- 实时控制台：把 Godot 的 stdout/stderr 抓进 Neovim。
+            --
+            -- 用 :GodotRunProject / :GodotRunCurrentScene 从 Neovim 启动游戏后，
+            -- GDScript 运行时错误、push_error/push_warning、堆栈回溯会逐行
+            -- 实时追加到 godotdev://console 这个 buffer（底部 30% 分屏）。
+            --
+            -- 代价（官方 README 也点明了）：开启后 :GodotRun* 不再是 detached
+            -- 启动，游戏进程由 Neovim 托管 —— 退出 Neovim 会连带结束游戏。
+            run = {
+                console = {
+                    enabled = true,
+                    renderer = "buffer",
+                    buffer = {
+                        position = "bottom",
+                        size = 0.3,
+                    },
+                },
+            },
         },
 
         -- 交给插件接管：端口注入 / 拦掉 godotdev 那次过早的
@@ -81,6 +113,53 @@ return {
 
             vim.keymap.set("n", "<leader>gs", "<cmd>GodotSceneTree<cr>", {
                 desc = "Godot Scene Tree",
+            })
+
+            ------------------------------------------------------------
+            -- 运行 + 实时控制台
+            ------------------------------------------------------------
+            -- 从 Neovim 启动的游戏才会被控制台捕获（因为 Neovim 是父进程）。
+            vim.keymap.set("n", "<leader>gr", "<cmd>GodotRunProject<cr>", {
+                desc = "Godot: Run Project（输出进控制台）",
+            })
+
+            vim.keymap.set("n", "<leader>gR", "<cmd>GodotRunCurrentScene<cr>", {
+                desc = "Godot: Run Current Scene（输出进控制台）",
+            })
+
+            -- 控制台 buffer 被关掉后用它重新调出来，不会重新启动游戏。
+            vim.keymap.set("n", "<leader>gl", "<cmd>GodotShowConsole<cr>", {
+                desc = "Godot: Show Run Console",
+            })
+
+            ------------------------------------------------------------
+            -- DAP 调试
+            ------------------------------------------------------------
+            -- godotdev 只注册 adapter/configuration，刻意不带快捷键，
+            -- 所以这里补一套最小的，否则 nvim-dap 根本没法从界面启动。
+            -- 断点命中时 dap-ui 会显示堆栈/变量，报错也走同一条通道。
+            vim.keymap.set("n", "<leader>gd", "<cmd>DapContinue<cr>", {
+                desc = "Godot: DAP 启动/继续",
+            })
+
+            vim.keymap.set("n", "<leader>gb", "<cmd>DapToggleBreakpoint<cr>", {
+                desc = "Godot: DAP 切换断点",
+            })
+
+            vim.keymap.set("n", "<leader>gi", "<cmd>DapStepInto<cr>", {
+                desc = "Godot: DAP 单步进入",
+            })
+
+            vim.keymap.set("n", "<leader>go", "<cmd>DapStepOver<cr>", {
+                desc = "Godot: DAP 单步跳过",
+            })
+
+            vim.keymap.set("n", "<leader>gu", function()
+                require("dapui").toggle()
+            end, { desc = "Godot: DAP UI 开关" })
+
+            vim.keymap.set("n", "<leader>gt", "<cmd>DapTerminate<cr>", {
+                desc = "Godot: DAP 结束会话",
             })
         end,
     },
