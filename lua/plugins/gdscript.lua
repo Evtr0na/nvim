@@ -111,6 +111,51 @@ return {
         config = function(_, opts)
             require("godot-instance").godotdev(opts)
 
+            ------------------------------------------------------------
+            -- 关掉 GDScript LSP 的 snippet 补全
+            ------------------------------------------------------------
+            -- 解决三个连着出现的问题：
+            --   1. 接受 add_child 后光标被塞进括号里（add_child(|)）
+            --   2. 参数位置出现常驻高亮，切 buffer 才消失
+            --      （Neovim 的 SnippetTabstop 高亮组，只在 snippet 会话结束时清除）
+            --   3. 输入模式下按 Tab 跳到下一个参数位置
+            --
+            -- 原理：Neovim 的 vim.lsp.protocol.make_client_capabilities()
+            -- 默认 snippetSupport = true，等于告诉服务端「给我 snippet 格式的补全」。
+            -- Godot 于是返回 add_child(${1:node}) 这种带占位符的文本，
+            -- blink 接受时走 vim.snippet.expand()，就建立了 snippet 会话。
+            -- 设为 false 后服务端改发纯文本，占位符 / 高亮 / Tab 跳转一起消失。
+            --
+            -- 代价：接受带参数的函数补全后，光标停在右括号**后面**而不是括号内，
+            -- 需要自己按左方向键进去。
+            --
+            -- 为什么用 autocmd 而不是在这里直接 vim.lsp.config()：
+            --   godotdev.setup() 内部是 `vim.lsp.config["gdscript"] = {...}`，
+            --   整体替换而不是合并。而它的 filetypes 里带 gdshader，
+            --   打开 .gdshader 也会触发本 spec 的 config —— 那时又会被重设一次。
+            --   挂在 FileType 上可以保证「无论谁最后设置，我们都在之后覆盖」。
+            --   （vim.lsp.config() 是深度合并，不会破坏 godotdev 设的
+            --    cmd / on_attach / root_markers。）
+            local group = vim.api.nvim_create_augroup("GDShaderNoSnippet", { clear = true })
+
+            vim.api.nvim_create_autocmd("FileType", {
+                group = group,
+                pattern = { "gd", "gdscript", "gdshader", "gdscript3" },
+                callback = function()
+                    vim.lsp.config("gdscript", {
+                        capabilities = {
+                            textDocument = {
+                                completion = {
+                                    completionItem = {
+                                        snippetSupport = false,
+                                    },
+                                },
+                            },
+                        },
+                    })
+                end,
+            })
+
             vim.keymap.set("n", "<leader>gs", "<cmd>GodotSceneTree<cr>", {
                 desc = "Godot Scene Tree",
             })

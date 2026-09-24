@@ -255,7 +255,7 @@ return {
             "gd",
             function()
                 require("fzf-lua").lsp_definitions({
-                    jump1 = false,
+                    jump1 = true,
                 })
             end,
             desc = "List Definitions",

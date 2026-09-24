@@ -29,21 +29,24 @@ return {
                 --   Tab     -> 下一项
                 --   S-Tab   -> 上一项
                 --
-                -- snippet 激活时：
-                --   Tab     -> 下一个参数
-                --   S-Tab   -> 上一个参数
+                -- snippet 激活时（比如接受了一个带参数的函数补全）：
+                --   Tab / S-Tab -> 普通 Tab（不跳参数位置）
                 --
                 -- 都没有时：
                 --   保持普通 Tab 行为
+                --
+                -- 注意：这里**刻意没有** snippet_forward / snippet_backward。
+                -- 那两个是 blink 的「在 snippet 占位符之间跳转」命令，实现是
+                -- vim.snippet.jump()，效果就是输入模式下按 Tab 跳到下一个参数
+                -- 位置。它会打断正常的 Tab 缩进，所以关掉。
+                -- 代价：接受带参数的补全后，需要自己按方向键/鼠标点进参数位置。
                 ["<Tab>"] = {
                     "select_next",
-                    "snippet_forward",
                     "fallback",
                 },
 
                 ["<S-Tab>"] = {
                     "select_prev",
-                    "snippet_backward",
                     "fallback",
                 },
             },
